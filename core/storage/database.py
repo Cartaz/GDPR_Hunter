@@ -17,7 +17,7 @@ class UnsupportedSchemaVersion(DatabaseSchemaError):
 class Database:
     """Own SQLite connection setup, lifecycle, schema compatibility, migrations, and transactions."""
 
-    CURRENT_SCHEMA_VERSION = 3
+    CURRENT_SCHEMA_VERSION = 4
 
     def __init__(self, path: Path) -> None:
         self._path = path
@@ -107,6 +107,7 @@ class Database:
             connection.execute("CREATE INDEX idx_identifiers_identity_id ON identifiers(identity_id)")
             self._create_targets_schema(connection)
             self._create_case_schema_v3(connection)
+            self._create_investigation_schema_v4(connection)
             connection.execute(
                 """
                 INSERT INTO schema_meta(id, schema_version, created_at, last_migrated_at)
@@ -124,6 +125,11 @@ class Database:
         if from_version == 2:
             self._migrate_v2_to_v3(connection)
             return 3
+        if from_version == 3:
+            with connection:
+                self._create_investigation_schema_v4(connection)
+                self._set_schema_version(connection, expected=3, target=4)
+            return 4
         raise UnsupportedSchemaVersion(f"No migration path from database schema version {from_version}")
 
     @staticmethod
@@ -265,6 +271,97 @@ class Database:
             END
             """
         )
+
+    @staticmethod
+    def _create_investigation_schema_v4(connection: sqlite3.Connection) -> None:
+        statements = (
+            """
+            CREATE TABLE investigations (
+                id INTEGER PRIMARY KEY,
+                identity_id INTEGER NOT NULL REFERENCES identities(id) ON DELETE RESTRICT,
+                title_enc BLOB,
+                status TEXT NOT NULL CHECK (
+                    status IN ('OPEN', 'ANALYSING', 'ACTIONABLE', 'CONCLUDED', 'INCONCLUSIVE', 'ARCHIVED')
+                ),
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """,
+            "CREATE INDEX idx_investigations_identity_id ON investigations(identity_id)",
+            "CREATE INDEX idx_investigations_status ON investigations(status)",
+            """
+            CREATE TABLE artifacts (
+                id INTEGER PRIMARY KEY,
+                storage_key TEXT NOT NULL UNIQUE,
+                kind TEXT NOT NULL CHECK (kind IN ('SMS', 'EMAIL', 'URL', 'TEXT', 'COMPANY_RESPONSE')),
+                media_type TEXT NOT NULL,
+                byte_size INTEGER NOT NULL CHECK (byte_size >= 0),
+                content_hash_enc BLOB NOT NULL,
+                created_at TEXT NOT NULL
+            )
+            """,
+            """
+            CREATE TABLE investigation_artifacts (
+                investigation_id INTEGER NOT NULL REFERENCES investigations(id) ON DELETE CASCADE,
+                artifact_id INTEGER NOT NULL REFERENCES artifacts(id) ON DELETE RESTRICT,
+                role TEXT NOT NULL CHECK (role IN ('TRIGGER', 'SUPPORTING', 'RESPONSE', 'REFERENCE')),
+                attached_at TEXT NOT NULL,
+                PRIMARY KEY (investigation_id, artifact_id)
+            )
+            """,
+            "CREATE INDEX idx_investigation_artifacts_artifact_id ON investigation_artifacts(artifact_id)",
+            """
+            CREATE TABLE evidence (
+                id INTEGER PRIMARY KEY,
+                investigation_id INTEGER NOT NULL REFERENCES investigations(id) ON DELETE CASCADE,
+                artifact_id INTEGER REFERENCES artifacts(id) ON DELETE SET NULL,
+                kind TEXT NOT NULL CHECK (kind IN ('EXTRACTED_FIELD', 'OBSERVATION', 'SOURCE_STATEMENT')),
+                provenance TEXT NOT NULL CHECK (
+                    provenance IN ('USER_STATEMENT', 'DETERMINISTIC_ANALYSIS', 'REMOTE_DOCUMENT', 'COMPANY_RESPONSE', 'AUTHORITATIVE_SOURCE')
+                ),
+                value_enc BLOB,
+                source_locator_enc BLOB,
+                created_at TEXT NOT NULL
+            )
+            """,
+            "CREATE INDEX idx_evidence_investigation_id ON evidence(investigation_id)",
+            "CREATE INDEX idx_evidence_artifact_id ON evidence(artifact_id)",
+            """
+            CREATE TABLE claims (
+                id INTEGER PRIMARY KEY,
+                investigation_id INTEGER NOT NULL REFERENCES investigations(id) ON DELETE CASCADE,
+                statement_enc BLOB NOT NULL,
+                status TEXT NOT NULL CHECK (
+                    status IN ('HYPOTHESIS', 'SUPPORTED', 'CORROBORATED', 'VERIFIED', 'CONTRADICTED', 'REJECTED')
+                ),
+                provenance TEXT NOT NULL CHECK (provenance IN ('USER', 'DETERMINISTIC', 'MODEL_INFERENCE')),
+                confidence REAL CHECK (confidence IS NULL OR (confidence >= 0.0 AND confidence <= 1.0)),
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """,
+            "CREATE INDEX idx_claims_investigation_id ON claims(investigation_id)",
+            "CREATE INDEX idx_claims_status ON claims(status)",
+            """
+            CREATE TABLE claim_evidence (
+                claim_id INTEGER NOT NULL REFERENCES claims(id) ON DELETE CASCADE,
+                evidence_id INTEGER NOT NULL REFERENCES evidence(id) ON DELETE CASCADE,
+                relation TEXT NOT NULL CHECK (relation IN ('SUPPORTS', 'CONTRADICTS')),
+                attached_at TEXT NOT NULL,
+                PRIMARY KEY (claim_id, evidence_id)
+            )
+            """,
+            "CREATE INDEX idx_claim_evidence_evidence_id ON claim_evidence(evidence_id)",
+            """
+            CREATE TRIGGER artifacts_no_update
+            BEFORE UPDATE ON artifacts
+            BEGIN
+                SELECT RAISE(ABORT, 'artifact metadata is immutable');
+            END
+            """,
+        )
+        for statement in statements:
+            connection.execute(statement)
 
     def _migrate_v2_to_v3(self, connection: sqlite3.Connection) -> None:
         with connection:
