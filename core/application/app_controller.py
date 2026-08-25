@@ -4,9 +4,24 @@ from datetime import date
 
 from core.application.case_service import CaseService
 from core.application.identity_service import IdentityService
+from core.application.investigation_service import InvestigationService
 from core.application.target_service import TargetService
 from core.domain.case import Case, CaseEvent, CaseStatus
 from core.domain.identity import IdentifierKind
+from core.domain.investigation import (
+    Artifact,
+    ArtifactKind,
+    ArtifactRole,
+    Claim,
+    ClaimProvenance,
+    ClaimStatus,
+    Evidence,
+    EvidenceKind,
+    EvidenceProvenance,
+    EvidenceRelation,
+    Investigation,
+    InvestigationStatus,
+)
 from core.domain.rights import CaseRight, RightPolicy
 from core.domain.target import Target
 
@@ -19,16 +34,19 @@ class AppController:
         identity_service: IdentityService,
         target_service: TargetService,
         case_service: CaseService,
+        investigation_service: InvestigationService,
     ) -> None:
         self._identity_service = identity_service
         self._target_service = target_service
         self._case_service = case_service
+        self._investigation_service = investigation_service
 
     def get_bootstrap_state(self) -> dict[str, object]:
         identity = self._identity_service.get_identity()
         identifiers = self._identity_service.list_identifiers()
         targets = self._target_service.list_targets()
         cases = self._case_service.list_cases()
+        investigations = self._investigation_service.list_investigations()
         return {
             "identity": {
                 "displayName": identity.display_name,
@@ -37,9 +55,10 @@ class AppController:
             "targets": [self._target_dto(target) for target in targets],
             "rights": [self._right_dto(policy) for policy in self._case_service.supported_rights()],
             "cases": [self._case_dto(case) for case in cases],
-            "milestone": "M3 — Rights Policy + Deadline Engine",
+            "investigations": [self._investigation_dto(item) for item in investigations],
+            "milestone": "M4 — Investigator Core + Evidence Model",
             "features": {
-                "investigator": False,
+                "investigatorCore": True,
                 "inference": False,
                 "research": False,
                 "cases": True,
@@ -88,6 +107,118 @@ class AppController:
 
     def get_case_timeline(self, case_id: int) -> list[dict[str, object]]:
         return [self._event_dto(event) for event in self._case_service.list_timeline(case_id)]
+
+    def create_investigation(self, title: str) -> dict[str, object]:
+        return self._investigation_dto(self._investigation_service.create_investigation(title))
+
+    def transition_investigation(self, investigation_id: int, target_status: str) -> dict[str, object]:
+        try:
+            status = InvestigationStatus(target_status)
+        except ValueError as exc:
+            raise ValueError("Unsupported investigation status") from exc
+        return self._investigation_dto(self._investigation_service.transition(investigation_id, status))
+
+    def import_text_artifact(
+        self,
+        investigation_id: int,
+        kind: str,
+        role: str,
+        text: str,
+    ) -> dict[str, object]:
+        try:
+            artifact_kind = ArtifactKind(kind)
+            artifact_role = ArtifactRole(role)
+        except ValueError as exc:
+            raise ValueError("Unsupported artifact kind or role") from exc
+        artifact = self._investigation_service.import_artifact(
+            investigation_id,
+            artifact_kind,
+            artifact_role,
+            "text/plain; charset=utf-8",
+            text.encode("utf-8"),
+        )
+        return self._artifact_dto(artifact)
+
+    def add_evidence(
+        self,
+        investigation_id: int,
+        artifact_id: int | None,
+        kind: str,
+        provenance: str,
+        value: str | None,
+        source_locator: str | None,
+    ) -> dict[str, object]:
+        try:
+            evidence_kind = EvidenceKind(kind)
+            evidence_provenance = EvidenceProvenance(provenance)
+        except ValueError as exc:
+            raise ValueError("Unsupported evidence kind or provenance") from exc
+        evidence = self._investigation_service.add_evidence(
+            investigation_id,
+            artifact_id,
+            evidence_kind,
+            evidence_provenance,
+            value,
+            source_locator,
+        )
+        return self._evidence_dto(evidence)
+
+    def create_claim(
+        self,
+        investigation_id: int,
+        statement: str,
+        provenance: str,
+        confidence: float | None,
+    ) -> dict[str, object]:
+        try:
+            claim_provenance = ClaimProvenance(provenance)
+        except ValueError as exc:
+            raise ValueError("Unsupported claim provenance") from exc
+        claim = self._investigation_service.create_claim(
+            investigation_id,
+            statement,
+            claim_provenance,
+            confidence,
+        )
+        return self._claim_dto(claim)
+
+    def attach_claim_evidence(self, claim_id: int, evidence_id: int, relation: str) -> dict[str, object]:
+        try:
+            parsed_relation = EvidenceRelation(relation)
+        except ValueError as exc:
+            raise ValueError("Unsupported claim-evidence relation") from exc
+        self._investigation_service.attach_evidence(claim_id, evidence_id, parsed_relation)
+        return {"claimId": claim_id, "evidenceId": evidence_id, "relation": parsed_relation.value}
+
+    def transition_claim(self, claim_id: int, target_status: str) -> dict[str, object]:
+        try:
+            status = ClaimStatus(target_status)
+        except ValueError as exc:
+            raise ValueError("Unsupported claim status") from exc
+        return self._claim_dto(self._investigation_service.transition_claim(claim_id, status))
+
+    def get_investigation_detail(self, investigation_id: int) -> dict[str, object]:
+        investigations = {
+            item.id: item for item in self._investigation_service.list_investigations() if item.id is not None
+        }
+        investigation = investigations.get(investigation_id)
+        if investigation is None:
+            raise LookupError("Investigation does not exist")
+        return {
+            "investigation": self._investigation_dto(investigation),
+            "artifacts": [
+                self._artifact_dto(item)
+                for item in self._investigation_service.list_artifacts(investigation_id)
+            ],
+            "evidence": [
+                self._evidence_dto(item)
+                for item in self._investigation_service.list_evidence(investigation_id)
+            ],
+            "claims": [
+                self._claim_dto(item)
+                for item in self._investigation_service.list_claims(investigation_id)
+            ],
+        }
 
     @staticmethod
     def _parse_date(value: str) -> date:
@@ -150,4 +281,48 @@ class AppController:
             "fromStatus": event.from_status.value if event.from_status else None,
             "toStatus": event.to_status.value if event.to_status else None,
             "createdAt": event.created_at,
+        }
+
+    @staticmethod
+    def _investigation_dto(investigation: Investigation) -> dict[str, object]:
+        return {
+            "id": investigation.id,
+            "title": investigation.title,
+            "status": investigation.status.value,
+            "createdAt": investigation.created_at,
+            "updatedAt": investigation.updated_at,
+        }
+
+    @staticmethod
+    def _artifact_dto(artifact: Artifact) -> dict[str, object]:
+        return {
+            "id": artifact.id,
+            "kind": artifact.kind.value,
+            "mediaType": artifact.media_type,
+            "byteSize": artifact.byte_size,
+            "createdAt": artifact.created_at,
+        }
+
+    @staticmethod
+    def _evidence_dto(evidence: Evidence) -> dict[str, object]:
+        return {
+            "id": evidence.id,
+            "artifactId": evidence.artifact_id,
+            "kind": evidence.kind.value,
+            "provenance": evidence.provenance.value,
+            "value": evidence.value,
+            "sourceLocator": evidence.source_locator,
+            "createdAt": evidence.created_at,
+        }
+
+    @staticmethod
+    def _claim_dto(claim: Claim) -> dict[str, object]:
+        return {
+            "id": claim.id,
+            "statement": claim.statement,
+            "status": claim.status.value,
+            "provenance": claim.provenance.value,
+            "confidence": claim.confidence,
+            "createdAt": claim.created_at,
+            "updatedAt": claim.updated_at,
         }
