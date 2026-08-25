@@ -14,11 +14,9 @@ from core.domain.investigation import (
     ArtifactRole,
     Claim,
     ClaimProvenance,
-    ClaimStatus,
     Evidence,
     EvidenceKind,
     EvidenceProvenance,
-    EvidenceRelation,
     Investigation,
     InvestigationStatus,
 )
@@ -139,63 +137,30 @@ class AppController:
         )
         return self._artifact_dto(artifact)
 
-    def add_evidence(
+    def add_user_evidence(
         self,
         investigation_id: int,
         artifact_id: int | None,
-        kind: str,
-        provenance: str,
         value: str | None,
         source_locator: str | None,
     ) -> dict[str, object]:
-        try:
-            evidence_kind = EvidenceKind(kind)
-            evidence_provenance = EvidenceProvenance(provenance)
-        except ValueError as exc:
-            raise ValueError("Unsupported evidence kind or provenance") from exc
         evidence = self._investigation_service.add_evidence(
             investigation_id,
             artifact_id,
-            evidence_kind,
-            evidence_provenance,
+            EvidenceKind.OBSERVATION,
+            EvidenceProvenance.USER_STATEMENT,
             value,
             source_locator,
         )
         return self._evidence_dto(evidence)
 
-    def create_claim(
-        self,
-        investigation_id: int,
-        statement: str,
-        provenance: str,
-        confidence: float | None,
-    ) -> dict[str, object]:
-        try:
-            claim_provenance = ClaimProvenance(provenance)
-        except ValueError as exc:
-            raise ValueError("Unsupported claim provenance") from exc
+    def create_user_claim(self, investigation_id: int, statement: str) -> dict[str, object]:
         claim = self._investigation_service.create_claim(
             investigation_id,
             statement,
-            claim_provenance,
-            confidence,
+            ClaimProvenance.USER,
         )
         return self._claim_dto(claim)
-
-    def attach_claim_evidence(self, claim_id: int, evidence_id: int, relation: str) -> dict[str, object]:
-        try:
-            parsed_relation = EvidenceRelation(relation)
-        except ValueError as exc:
-            raise ValueError("Unsupported claim-evidence relation") from exc
-        self._investigation_service.attach_evidence(claim_id, evidence_id, parsed_relation)
-        return {"claimId": claim_id, "evidenceId": evidence_id, "relation": parsed_relation.value}
-
-    def transition_claim(self, claim_id: int, target_status: str) -> dict[str, object]:
-        try:
-            status = ClaimStatus(target_status)
-        except ValueError as exc:
-            raise ValueError("Unsupported claim status") from exc
-        return self._claim_dto(self._investigation_service.transition_claim(claim_id, status))
 
     def get_investigation_detail(self, investigation_id: int) -> dict[str, object]:
         investigations = {
