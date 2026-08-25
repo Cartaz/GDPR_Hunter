@@ -17,7 +17,7 @@ class UnsupportedSchemaVersion(DatabaseSchemaError):
 class Database:
     """Own SQLite connection setup, lifecycle, schema compatibility, migrations, and transactions."""
 
-    CURRENT_SCHEMA_VERSION = 2
+    CURRENT_SCHEMA_VERSION = 3
 
     def __init__(self, path: Path) -> None:
         self._path = path
@@ -105,7 +105,8 @@ class Database:
                 """
             )
             connection.execute("CREATE INDEX idx_identifiers_identity_id ON identifiers(identity_id)")
-            self._create_m2_schema(connection)
+            self._create_targets_schema(connection)
+            self._create_case_schema_v3(connection)
             connection.execute(
                 """
                 INSERT INTO schema_meta(id, schema_version, created_at, last_migrated_at)
@@ -118,21 +119,29 @@ class Database:
         if from_version == 1:
             with connection:
                 self._create_m2_schema(connection)
-                cursor = connection.execute(
-                    """
-                    UPDATE schema_meta
-                    SET schema_version = 2, last_migrated_at = datetime('now')
-                    WHERE id = 1 AND schema_version = 1
-                    """
-                )
-                if cursor.rowcount != 1:
-                    raise DatabaseSchemaError("Database schema version changed during migration")
+                self._set_schema_version(connection, expected=1, target=2)
             return 2
+        if from_version == 2:
+            self._migrate_v2_to_v3(connection)
+            return 3
         raise UnsupportedSchemaVersion(f"No migration path from database schema version {from_version}")
 
     @staticmethod
-    def _create_m2_schema(connection: sqlite3.Connection) -> None:
-        statements = (
+    def _set_schema_version(connection: sqlite3.Connection, expected: int, target: int) -> None:
+        cursor = connection.execute(
+            """
+            UPDATE schema_meta
+            SET schema_version = ?, last_migrated_at = datetime('now')
+            WHERE id = 1 AND schema_version = ?
+            """,
+            (target, expected),
+        )
+        if cursor.rowcount != 1:
+            raise DatabaseSchemaError("Database schema version changed during migration")
+
+    @staticmethod
+    def _create_targets_schema(connection: sqlite3.Connection) -> None:
+        connection.execute(
             """
             CREATE TABLE targets (
                 id INTEGER PRIMARY KEY,
@@ -142,7 +151,12 @@ class Database:
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             )
-            """,
+            """
+        )
+
+    def _create_m2_schema(self, connection: sqlite3.Connection) -> None:
+        self._create_targets_schema(connection)
+        statements = (
             """
             CREATE TABLE cases (
                 id INTEGER PRIMARY KEY,
@@ -184,6 +198,148 @@ class Database:
         )
         for statement in statements:
             connection.execute(statement)
+
+    @staticmethod
+    def _create_case_schema_v3(connection: sqlite3.Connection) -> None:
+        statements = (
+            """
+            CREATE TABLE cases (
+                id INTEGER PRIMARY KEY,
+                identity_id INTEGER NOT NULL REFERENCES identities(id) ON DELETE RESTRICT,
+                target_id INTEGER NOT NULL REFERENCES targets(id) ON DELETE RESTRICT,
+                right_type TEXT NOT NULL CHECK (
+                    right_type IN ('UNSPECIFIED', 'ACCESS_PROVENANCE', 'ERASURE', 'DIRECT_MARKETING_OBJECTION')
+                ),
+                status TEXT NOT NULL CHECK (
+                    status IN ('DRAFT', 'AWAITING_RESPONSE', 'COMPLETED', 'CANCELLED')
+                ),
+                received_on TEXT,
+                extension_notified_on TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """,
+            "CREATE INDEX idx_cases_identity_id ON cases(identity_id)",
+            "CREATE INDEX idx_cases_target_id ON cases(target_id)",
+            "CREATE INDEX idx_cases_status ON cases(status)",
+            "CREATE INDEX idx_cases_right_type ON cases(right_type)",
+            """
+            CREATE TABLE case_events (
+                id INTEGER PRIMARY KEY,
+                case_id INTEGER NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+                event_type TEXT NOT NULL CHECK (
+                    event_type IN ('CREATED', 'STATUS_CHANGED', 'REQUEST_SUBMITTED', 'EXTENSION_RECORDED')
+                ),
+                from_status TEXT CHECK (
+                    from_status IS NULL OR from_status IN ('DRAFT', 'AWAITING_RESPONSE', 'COMPLETED', 'CANCELLED')
+                ),
+                to_status TEXT CHECK (
+                    to_status IS NULL OR to_status IN ('DRAFT', 'AWAITING_RESPONSE', 'COMPLETED', 'CANCELLED')
+                ),
+                created_at TEXT NOT NULL
+            )
+            """,
+            "CREATE INDEX idx_case_events_case_id ON case_events(case_id, id)",
+        )
+        for statement in statements:
+            connection.execute(statement)
+        Database._create_case_event_triggers(connection)
+
+    @staticmethod
+    def _create_case_event_triggers(connection: sqlite3.Connection) -> None:
+        connection.execute(
+            """
+            CREATE TRIGGER case_events_no_update
+            BEFORE UPDATE ON case_events
+            BEGIN
+                SELECT RAISE(ABORT, 'case events are append-only');
+            END
+            """
+        )
+        connection.execute(
+            """
+            CREATE TRIGGER case_events_no_delete
+            BEFORE DELETE ON case_events
+            BEGIN
+                SELECT RAISE(ABORT, 'case events are append-only');
+            END
+            """
+        )
+
+    def _migrate_v2_to_v3(self, connection: sqlite3.Connection) -> None:
+        with connection:
+            connection.execute(
+                """
+                CREATE TABLE cases_v3 (
+                    id INTEGER PRIMARY KEY,
+                    identity_id INTEGER NOT NULL REFERENCES identities(id) ON DELETE RESTRICT,
+                    target_id INTEGER NOT NULL REFERENCES targets(id) ON DELETE RESTRICT,
+                    right_type TEXT NOT NULL CHECK (
+                        right_type IN ('UNSPECIFIED', 'ACCESS_PROVENANCE', 'ERASURE', 'DIRECT_MARKETING_OBJECTION')
+                    ),
+                    status TEXT NOT NULL CHECK (
+                        status IN ('DRAFT', 'AWAITING_RESPONSE', 'COMPLETED', 'CANCELLED')
+                    ),
+                    received_on TEXT,
+                    extension_notified_on TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE TABLE case_events_v3 (
+                    id INTEGER PRIMARY KEY,
+                    case_id INTEGER NOT NULL REFERENCES cases_v3(id) ON DELETE CASCADE,
+                    event_type TEXT NOT NULL CHECK (
+                        event_type IN ('CREATED', 'STATUS_CHANGED', 'REQUEST_SUBMITTED', 'EXTENSION_RECORDED')
+                    ),
+                    from_status TEXT,
+                    to_status TEXT,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
+            connection.execute(
+                """
+                INSERT INTO cases_v3(
+                    id, identity_id, target_id, right_type, status,
+                    received_on, extension_notified_on, created_at, updated_at
+                )
+                SELECT
+                    id, identity_id, target_id, 'UNSPECIFIED',
+                    CASE status WHEN 'OPEN' THEN 'AWAITING_RESPONSE' ELSE status END,
+                    NULL, NULL, created_at, updated_at
+                FROM cases
+                """
+            )
+            connection.execute(
+                """
+                INSERT INTO case_events_v3(id, case_id, event_type, from_status, to_status, created_at)
+                SELECT
+                    id,
+                    case_id,
+                    event_type,
+                    CASE from_status WHEN 'OPEN' THEN 'AWAITING_RESPONSE' ELSE from_status END,
+                    CASE to_status WHEN 'OPEN' THEN 'AWAITING_RESPONSE' ELSE to_status END,
+                    created_at
+                FROM case_events
+                """
+            )
+            connection.execute("DROP TRIGGER case_events_no_update")
+            connection.execute("DROP TRIGGER case_events_no_delete")
+            connection.execute("DROP TABLE case_events")
+            connection.execute("DROP TABLE cases")
+            connection.execute("ALTER TABLE cases_v3 RENAME TO cases")
+            connection.execute("ALTER TABLE case_events_v3 RENAME TO case_events")
+            connection.execute("CREATE INDEX idx_cases_identity_id ON cases(identity_id)")
+            connection.execute("CREATE INDEX idx_cases_target_id ON cases(target_id)")
+            connection.execute("CREATE INDEX idx_cases_status ON cases(status)")
+            connection.execute("CREATE INDEX idx_cases_right_type ON cases(right_type)")
+            connection.execute("CREATE INDEX idx_case_events_case_id ON case_events(case_id, id)")
+            self._create_case_event_triggers(connection)
+            self._set_schema_version(connection, expected=2, target=3)
 
     @staticmethod
     def _existing_schema_version(connection: sqlite3.Connection) -> int | None:
