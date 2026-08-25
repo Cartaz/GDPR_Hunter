@@ -66,22 +66,28 @@ class Database:
 
     def _create_current_schema(self, connection: sqlite3.Connection) -> None:
         with connection:
-            connection.executescript(
+            connection.execute(
                 """
                 CREATE TABLE schema_meta (
                     id INTEGER PRIMARY KEY CHECK (id = 1),
                     schema_version INTEGER NOT NULL,
                     created_at TEXT NOT NULL,
                     last_migrated_at TEXT NOT NULL
-                );
-
+                )
+                """
+            )
+            connection.execute(
+                """
                 CREATE TABLE identities (
                     id INTEGER PRIMARY KEY,
                     display_name_enc BLOB,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
-                );
-
+                )
+                """
+            )
+            connection.execute(
+                """
                 CREATE TABLE identifiers (
                     id INTEGER PRIMARY KEY,
                     identity_id INTEGER NOT NULL REFERENCES identities(id) ON DELETE CASCADE,
@@ -91,11 +97,10 @@ class Database:
                     active INTEGER NOT NULL CHECK (active IN (0, 1)),
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
-                );
-
-                CREATE INDEX idx_identifiers_identity_id ON identifiers(identity_id);
+                )
                 """
             )
+            connection.execute("CREATE INDEX idx_identifiers_identity_id ON identifiers(identity_id)")
             self._create_m2_schema(connection)
             connection.execute(
                 """
@@ -109,19 +114,21 @@ class Database:
         if from_version == 1:
             with connection:
                 self._create_m2_schema(connection)
-                connection.execute(
+                cursor = connection.execute(
                     """
                     UPDATE schema_meta
                     SET schema_version = 2, last_migrated_at = datetime('now')
                     WHERE id = 1 AND schema_version = 1
                     """
                 )
+                if cursor.rowcount != 1:
+                    raise DatabaseSchemaError("Database schema version changed during migration")
             return 2
         raise UnsupportedSchemaVersion(f"No migration path from database schema version {from_version}")
 
     @staticmethod
     def _create_m2_schema(connection: sqlite3.Connection) -> None:
-        connection.executescript(
+        statements = (
             """
             CREATE TABLE targets (
                 id INTEGER PRIMARY KEY,
@@ -130,8 +137,9 @@ class Database:
                 privacy_email TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
-            );
-
+            )
+            """,
+            """
             CREATE TABLE cases (
                 id INTEGER PRIMARY KEY,
                 identity_id INTEGER NOT NULL REFERENCES identities(id) ON DELETE RESTRICT,
@@ -139,12 +147,12 @@ class Database:
                 status TEXT NOT NULL CHECK (status IN ('DRAFT', 'OPEN', 'COMPLETED', 'CANCELLED')),
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
-            );
-
-            CREATE INDEX idx_cases_identity_id ON cases(identity_id);
-            CREATE INDEX idx_cases_target_id ON cases(target_id);
-            CREATE INDEX idx_cases_status ON cases(status);
-
+            )
+            """,
+            "CREATE INDEX idx_cases_identity_id ON cases(identity_id)",
+            "CREATE INDEX idx_cases_target_id ON cases(target_id)",
+            "CREATE INDEX idx_cases_status ON cases(status)",
+            """
             CREATE TABLE case_events (
                 id INTEGER PRIMARY KEY,
                 case_id INTEGER NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
@@ -152,23 +160,26 @@ class Database:
                 from_status TEXT CHECK (from_status IS NULL OR from_status IN ('DRAFT', 'OPEN', 'COMPLETED', 'CANCELLED')),
                 to_status TEXT CHECK (to_status IS NULL OR to_status IN ('DRAFT', 'OPEN', 'COMPLETED', 'CANCELLED')),
                 created_at TEXT NOT NULL
-            );
-
-            CREATE INDEX idx_case_events_case_id ON case_events(case_id, id);
-
+            )
+            """,
+            "CREATE INDEX idx_case_events_case_id ON case_events(case_id, id)",
+            """
             CREATE TRIGGER case_events_no_update
             BEFORE UPDATE ON case_events
             BEGIN
                 SELECT RAISE(ABORT, 'case events are append-only');
-            END;
-
+            END
+            """,
+            """
             CREATE TRIGGER case_events_no_delete
             BEFORE DELETE ON case_events
             BEGIN
                 SELECT RAISE(ABORT, 'case events are append-only');
-            END;
-            """
+            END
+            """,
         )
+        for statement in statements:
+            connection.execute(statement)
 
     @staticmethod
     def _existing_schema_version(connection: sqlite3.Connection) -> int | None:
