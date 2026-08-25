@@ -1,0 +1,25 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local runtime/user data
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+*.db
+*.log
+artifacts/
+eval-results/
+
+# Local secrets/config overrides
+.env
+*.key
+
+# Editors/OS
+.idea/
+.vscode/
+.DS_Store
