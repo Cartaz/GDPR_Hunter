@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GDPR Hunter</title>
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="Primary navigation">
+      <div class="brand">GDPR <span>Hunter</span></div>
+      <nav>
+        <button class="nav-item selected" type="button">Dashboard</button>
+        <button class="nav-item" type="button" disabled>Investigations</button>
+        <button class="nav-item" type="button" disabled>Exposures</button>
+        <button class="nav-item" type="button" disabled>Cases</button>
+        <button class="nav-item" type="button" disabled>Targets</button>
+      </nav>
+    </aside>
+
+    <main>
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">LOCAL-FIRST PRIVACY CONTROL</p>
+          <h1>Foundation</h1>
+        </div>
+        <div id="milestone" class="badge">Loading…</div>
+      </header>
+
+      <section class="metric-grid" aria-label="Foundation status">
+        <article class="card metric">
+          <span class="metric-label">Identifiers</span>
+          <strong id="identifier-count">0</strong>
+          <small>Encrypted locally</small>
+        </article>
+        <article class="card metric">
+          <span class="metric-label">Investigator</span>
+          <strong class="pending">Planned</strong>
+          <small>Not active in M1</small>
+        </article>
+        <article class="card metric">
+          <span class="metric-label">Inference</span>
+          <strong class="pending">Offline</strong>
+          <small>No LLM calls in M1</small>
+        </article>
+      </section>
+
+      <section class="content-grid">
+        <article class="card">
+          <p class="eyebrow">IDENTITY VAULT</p>
+          <h2>Local profile</h2>
+          <p class="muted">Sensitive values are encrypted before they reach SQLite.</p>
+          <form id="name-form" class="form-row">
+            <label for="display-name">Display name</label>
+            <div class="inline-control">
+              <input id="display-name" name="display-name" autocomplete="off" placeholder="Optional display name">
+              <button type="submit">Save</button>
+            </div>
+          </form>
+        </article>
+
+        <article class="card">
+          <p class="eyebrow">ARCHITECTURE</p>
+          <h2>M1 boundaries</h2>
+          <ul class="status-list">
+            <li><span>Python canonical state</span><b>Active</b></li>
+            <li><span>Local-only WebEngine</span><b>Active</b></li>
+            <li><span>Encrypted sensitive store</span><b>Active</b></li>
+            <li><span>Investigator / LLM</span><b class="pending-text">Later</b></li>
+          </ul>
+        </article>
+      </section>
+
+      <p id="status" class="status" role="status" aria-live="polite"></p>
+    </main>
+  </div>
+
+  <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
