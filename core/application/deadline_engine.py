@@ -20,16 +20,16 @@ class DeadlineEngine:
     def calculate(
         self,
         received_on: date,
-        public_holidays: Iterable[date] = (),
+        public_holidays: Iterable[date] | None = None,
     ) -> DeadlineSchedule:
-        holidays = frozenset(public_holidays)
+        holidays = frozenset(public_holidays or ())
         initial_nominal = self._add_months(received_on, 1)
         extended_nominal = self._add_months(received_on, 3)
         return DeadlineSchedule(
             received_on=received_on,
             initial_due_on=self._next_working_day(initial_nominal, holidays),
             extended_due_on=self._next_working_day(extended_nominal, holidays),
-            public_holiday_review_required=not holidays,
+            public_holiday_review_required=public_holidays is None,
         )
 
     def extension_notice_is_timely(
