@@ -10,9 +10,11 @@ from PySide6.QtWidgets import QApplication, QMessageBox
 from config.settings import SettingsStore
 from core.application.app_controller import AppController
 from core.application.case_service import CaseService
+from core.application.deadline_engine import DeadlineEngine
 from core.application.identity_service import IdentityService
 from core.application.paths import default_app_paths
 from core.application.target_service import TargetService
+from core.domain.rights import RightsPolicy
 from core.storage.case_repository import CaseRepository
 from core.storage.database import Database
 from core.storage.identity_repository import IdentityRepository
@@ -45,7 +47,13 @@ def build_controller() -> tuple[AppController, SettingsStore]:
 
     identity_service = IdentityService(IdentityRepository(database, sensitive_store))
     target_service = TargetService(TargetRepository(database))
-    case_service = CaseService(CaseRepository(database), identity_service, target_service)
+    case_service = CaseService(
+        CaseRepository(database),
+        identity_service,
+        target_service,
+        RightsPolicy(),
+        DeadlineEngine(),
+    )
     return AppController(identity_service, target_service, case_service), settings_store
 
 
