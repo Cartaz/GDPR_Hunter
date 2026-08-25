@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 
 
@@ -93,6 +93,29 @@ class ClaimStatus(StrEnum):
     REJECTED = "REJECTED"
 
 
+_ALLOWED_CLAIM_TRANSITIONS: dict[ClaimStatus, frozenset[ClaimStatus]] = {
+    ClaimStatus.HYPOTHESIS: frozenset(
+        {ClaimStatus.SUPPORTED, ClaimStatus.CONTRADICTED, ClaimStatus.REJECTED}
+    ),
+    ClaimStatus.SUPPORTED: frozenset(
+        {ClaimStatus.CORROBORATED, ClaimStatus.CONTRADICTED, ClaimStatus.REJECTED}
+    ),
+    ClaimStatus.CORROBORATED: frozenset(
+        {ClaimStatus.VERIFIED, ClaimStatus.CONTRADICTED, ClaimStatus.REJECTED}
+    ),
+    ClaimStatus.VERIFIED: frozenset({ClaimStatus.CONTRADICTED}),
+    ClaimStatus.CONTRADICTED: frozenset(
+        {ClaimStatus.SUPPORTED, ClaimStatus.CORROBORATED, ClaimStatus.REJECTED}
+    ),
+    ClaimStatus.REJECTED: frozenset(),
+}
+
+
+def validate_claim_transition(current: ClaimStatus, target: ClaimStatus) -> None:
+    if target not in _ALLOWED_CLAIM_TRANSITIONS[current]:
+        raise ValueError(f"Invalid claim transition: {current.value} -> {target.value}")
+
+
 class ClaimProvenance(StrEnum):
     USER = "USER"
     DETERMINISTIC = "DETERMINISTIC"
@@ -108,7 +131,7 @@ class EvidenceRelation(StrEnum):
 class Investigation:
     id: int | None
     identity_id: int
-    title: str | None
+    title: str | None = field(repr=False)
     status: InvestigationStatus
     created_at: str
     updated_at: str
@@ -117,7 +140,7 @@ class Investigation:
 @dataclass(frozen=True, slots=True)
 class Artifact:
     id: int | None
-    storage_key: str
+    storage_key: str = field(repr=False)
     kind: ArtifactKind
     media_type: str
     byte_size: int
@@ -131,8 +154,8 @@ class Evidence:
     artifact_id: int | None
     kind: EvidenceKind
     provenance: EvidenceProvenance
-    value: str | None
-    source_locator: str | None
+    value: str | None = field(repr=False)
+    source_locator: str | None = field(repr=False)
     created_at: str
 
 
@@ -140,7 +163,7 @@ class Evidence:
 class Claim:
     id: int | None
     investigation_id: int
-    statement: str
+    statement: str = field(repr=False)
     status: ClaimStatus
     provenance: ClaimProvenance
     confidence: float | None
