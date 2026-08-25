@@ -8,7 +8,6 @@ from core.storage.database import Database
 from core.storage.identity_repository import IdentityRepository
 from core.storage.sensitive_store import SensitiveStore
 
-
 TEST_KEY = b"k" * 32
 
 
