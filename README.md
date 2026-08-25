@@ -4,16 +4,17 @@ GDPR Hunter is a local-first desktop privacy application under active developmen
 
 ## Current status
 
-Milestone **M2 — Target Registry + Case Workflow** is implemented. The current codebase provides the desktop foundation from M1 plus:
+Milestone **M3 — Rights Policy + Deadline Engine** is implemented. The current codebase provides the desktop foundation, encrypted identity/artifact storage, Target Registry, GDPR Case workflow, deterministic rights policy for the initial supported use cases, and calendar-based Article 12 deadline tracking.
 
-- a local Target registry for data holders/controllers;
-- deterministic database migration from schema v1 to v2;
-- Case creation linked to the local Identity and a Target;
-- a Python-owned Case state machine (`DRAFT`, `OPEN`, `COMPLETED`, `CANCELLED`);
-- append-only Case timeline events persisted atomically with lifecycle transitions;
-- local UI controls for Target creation, Case creation/transitions, and timeline inspection.
+Supported M3 GDPR workflows are:
 
-Investigator, LLM inference, web research, GDPR rights/deadline policy, request delivery, exposure discovery, monitoring, and escalation are planned but are **not implemented yet**.
+- Article 15 access and provenance, including available source information when data were not collected from the data subject;
+- Article 17 erasure, with the application explicitly preserving the need for a case-specific ground and possible statutory exceptions;
+- Article 21(2)-(3) objection to processing for direct marketing.
+
+Cases record the date the controller received a request. Deadline calculations use calendar months rather than fixed 30-day intervals, roll weekend deadlines to the following working day, and support an injected public-holiday set. The current production workflow does not yet know the relevant jurisdiction-specific holiday calendar, so the UI explicitly flags that public-holiday review remains required.
+
+Investigator, LLM inference, web research, exposure discovery, automated delivery, monitoring, and escalation are planned but are **not implemented yet**.
 
 ## Architecture
 
@@ -24,6 +25,7 @@ Investigator, LLM inference, web research, GDPR rights/deadline policy, request 
 - SQLite for operational persistence
 - Python owns canonical state and business logic
 - Sensitive personal data is encrypted before persistence
+- GDPR rights and deadline rules are deterministic Python modules; no LLM participates in legal workflow decisions
 
 ## Install
 
@@ -48,4 +50,4 @@ chmod +x install.sh
 
 ## Security posture
 
-The application is designed around local-first processing, explicit outbound-data control, local-only WebEngine content, redacted diagnostics, append-only workflow evidence, and strict separation between future LLM inference and canonical application state.
+The application is designed around local-first processing, explicit outbound-data control, local-only WebEngine content, redacted diagnostics, encrypted sensitive persistence, append-only Case timelines, and strict separation between future LLM inference and canonical application state.
