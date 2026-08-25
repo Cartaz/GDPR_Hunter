@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import sqlite3
 import sys
 from pathlib import Path
 
@@ -58,7 +59,7 @@ def main() -> int:
             "A secure operating-system credential store is required before GDPR Hunter can start.",
         )
         return 1
-    except Exception:
+    except (OSError, RuntimeError, ValueError, sqlite3.Error):
         _LOG.critical("Application initialization failed", exc_info=True)
         QMessageBox.critical(None, "GDPR Hunter", "Application initialization failed. Check the logs for details.")
         return 1
