@@ -1,6 +1,6 @@
 const statusNode = document.getElementById("status");
 const milestoneNode = document.getElementById("milestone");
-const identifierCountNode = document.getElementById("identifier-count");
+const investigationCountNode = document.getElementById("investigation-count");
 const targetCountNode = document.getElementById("target-count");
 const caseCountNode = document.getElementById("case-count");
 const displayNameNode = document.getElementById("display-name");
@@ -15,9 +15,26 @@ const caseRightNode = document.getElementById("case-right");
 const rightSummaryNode = document.getElementById("right-summary");
 const timelineTitleNode = document.getElementById("timeline-title");
 const timelineListNode = document.getElementById("timeline-list");
+const investigationForm = document.getElementById("investigation-form");
+const investigationTitleNode = document.getElementById("investigation-title");
+const investigationListNode = document.getElementById("investigation-list");
+const investigationDetailNode = document.getElementById("investigation-detail");
+const investigationDetailEmptyNode = document.getElementById("investigation-detail-empty");
+const investigationDetailTitleNode = document.getElementById("investigation-detail-title");
+const investigationDetailListNode = document.getElementById("investigation-detail-list");
+const artifactForm = document.getElementById("artifact-form");
+const artifactKindNode = document.getElementById("artifact-kind");
+const artifactTextNode = document.getElementById("artifact-text");
+const evidenceForm = document.getElementById("evidence-form");
+const evidenceValueNode = document.getElementById("evidence-value");
+const evidenceLocatorNode = document.getElementById("evidence-locator");
+const claimForm = document.getElementById("claim-form");
+const claimStatementNode = document.getElementById("claim-statement");
 
 let backend = null;
 let currentState = null;
+let selectedInvestigationId = null;
+let selectedInvestigationDetail = null;
 
 function setStatus(message, isError = false) {
   statusNode.textContent = message;
@@ -48,6 +65,81 @@ function localDateString() {
 function targetName(targetId) {
   const target = currentState?.targets?.find((item) => item.id === targetId);
   return target?.name ?? `Target #${targetId}`;
+}
+
+function renderInvestigations(investigations) {
+  clearNode(investigationListNode);
+  if (!investigations.length) {
+    const empty = document.createElement("p");
+    empty.className = "muted empty-state";
+    empty.textContent = "No investigations created yet.";
+    investigationListNode.appendChild(empty);
+    return;
+  }
+
+  for (const investigation of investigations) {
+    const row = document.createElement("div");
+    row.className = "record";
+    const info = document.createElement("div");
+    const title = document.createElement("strong");
+    title.textContent = investigation.title ?? `Investigation #${investigation.id}`;
+    const detail = document.createElement("small");
+    detail.textContent = `#${investigation.id} · ${investigation.status}`;
+    info.append(title, detail);
+    row.append(info, makeButton("Inspect", () => loadInvestigation(investigation.id)));
+    investigationListNode.appendChild(row);
+  }
+}
+
+function renderInvestigationDetail(detail) {
+  selectedInvestigationDetail = detail;
+  investigationDetailEmptyNode.hidden = true;
+  investigationDetailNode.hidden = false;
+  investigationDetailTitleNode.textContent = detail.investigation.title ?? `Investigation #${detail.investigation.id}`;
+  clearNode(investigationDetailListNode);
+
+  const summary = document.createElement("div");
+  summary.className = "timeline-event";
+  const summaryTitle = document.createElement("strong");
+  summaryTitle.textContent = `${detail.artifacts.length} artifact(s) · ${detail.evidence.length} evidence item(s) · ${detail.claims.length} claim(s)`;
+  const summaryStatus = document.createElement("small");
+  summaryStatus.textContent = `State: ${detail.investigation.status}`;
+  summary.append(summaryTitle, summaryStatus);
+  investigationDetailListNode.appendChild(summary);
+
+  for (const evidence of detail.evidence) {
+    const row = document.createElement("div");
+    row.className = "timeline-event";
+    const title = document.createElement("strong");
+    title.textContent = `Evidence #${evidence.id} · ${evidence.kind}`;
+    const value = document.createElement("small");
+    value.textContent = `${evidence.provenance} · ${evidence.value ?? evidence.sourceLocator ?? "No display value"}`;
+    row.append(title, value);
+    investigationDetailListNode.appendChild(row);
+  }
+
+  for (const claim of detail.claims) {
+    const row = document.createElement("div");
+    row.className = "timeline-event";
+    const title = document.createElement("strong");
+    title.textContent = `Claim #${claim.id} · ${claim.status}`;
+    const statement = document.createElement("small");
+    statement.textContent = `${claim.provenance} · ${claim.statement}`;
+    row.append(title, statement);
+    investigationDetailListNode.appendChild(row);
+  }
+}
+
+function loadInvestigation(investigationId) {
+  if (!backend) return;
+  backend.getInvestigationDetail(investigationId, (response) => {
+    if (response?.error) {
+      setStatus(response.error.message, true);
+      return;
+    }
+    selectedInvestigationId = investigationId;
+    renderInvestigationDetail(response);
+  });
 }
 
 function renderRights(rights) {
@@ -81,14 +173,12 @@ function renderTargets(targets) {
   for (const target of targets) {
     const row = document.createElement("div");
     row.className = "record";
-
     const info = document.createElement("div");
     const title = document.createElement("strong");
     title.textContent = target.name;
     const detail = document.createElement("small");
     detail.textContent = target.domain ?? target.privacyEmail ?? "No public contact recorded";
     info.append(title, detail);
-
     row.append(info, makeButton("New case", () => createCase(target.id)));
     targetListNode.appendChild(row);
   }
@@ -118,7 +208,6 @@ function renderCases(cases) {
   for (const caseItem of cases) {
     const row = document.createElement("div");
     row.className = "record case-record";
-
     const info = document.createElement("div");
     const title = document.createElement("strong");
     title.textContent = targetName(caseItem.targetId);
@@ -137,15 +226,11 @@ function renderCases(cases) {
     actions.appendChild(makeButton("Timeline", () => loadTimeline(caseItem.id)));
 
     if (caseItem.status === "DRAFT" && caseItem.right !== "UNSPECIFIED") {
-      actions.appendChild(
-        makeDateAction("Record submission", (value) => submitCase(caseItem.id, value)),
-      );
+      actions.appendChild(makeDateAction("Record submission", (value) => submitCase(caseItem.id, value)));
       actions.appendChild(makeButton("Cancel", () => transitionCase(caseItem.id, "CANCELLED")));
     } else if (caseItem.status === "AWAITING_RESPONSE") {
       if (!caseItem.extensionNotifiedOn) {
-        actions.appendChild(
-          makeDateAction("Record extension", (value) => recordExtension(caseItem.id, value)),
-        );
+        actions.appendChild(makeDateAction("Record extension", (value) => recordExtension(caseItem.id, value)));
       }
       actions.appendChild(makeButton("Complete", () => transitionCase(caseItem.id, "COMPLETED")));
       actions.appendChild(makeButton("Cancel", () => transitionCase(caseItem.id, "CANCELLED")));
@@ -158,29 +243,26 @@ function renderCases(cases) {
 
 function renderState(state) {
   currentState = state;
-  milestoneNode.textContent = state.milestone ?? "M3";
-  identifierCountNode.textContent = String(state.identity?.identifierCount ?? 0);
+  milestoneNode.textContent = state.milestone ?? "M4";
+  investigationCountNode.textContent = String(state.investigations?.length ?? 0);
   targetCountNode.textContent = String(state.targets?.length ?? 0);
   caseCountNode.textContent = String(state.cases?.length ?? 0);
   displayNameNode.value = state.identity?.displayName ?? "";
+  renderInvestigations(state.investigations ?? []);
   renderRights(state.rights ?? []);
   renderTargets(state.targets ?? []);
   renderCases(state.cases ?? []);
+  if (selectedInvestigationId) loadInvestigation(selectedInvestigationId);
 }
 
 function handleMutation(response, successMessage) {
-  if (response?.ok) {
-    setStatus(successMessage);
-  } else if (response?.error?.message) {
-    setStatus(response.error.message, true);
-  }
+  if (response?.ok) setStatus(successMessage);
+  else if (response?.error?.message) setStatus(response.error.message, true);
 }
 
 function createCase(targetId) {
   if (!backend || !caseRightNode.value) return;
-  backend.createCase(targetId, caseRightNode.value, (response) => {
-    handleMutation(response, "Draft GDPR case created locally.");
-  });
+  backend.createCase(targetId, caseRightNode.value, (response) => handleMutation(response, "Draft GDPR case created locally."));
 }
 
 function submitCase(caseId, receivedOn) {
@@ -264,6 +346,65 @@ targetForm.addEventListener("submit", (event) => {
   backend.createTarget(targetNameNode.value, targetDomainNode.value, privacyEmailNode.value, (response) => {
     handleMutation(response, "Target added locally.");
     if (response?.ok) targetForm.reset();
+  });
+});
+
+investigationForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  if (!backend) return;
+  backend.createInvestigation(investigationTitleNode.value, (response) => {
+    handleMutation(response, "Investigation created locally.");
+    if (response?.ok) {
+      investigationForm.reset();
+      selectedInvestigationId = response.result.id;
+      loadInvestigation(selectedInvestigationId);
+    }
+  });
+});
+
+artifactForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  if (!backend || !selectedInvestigationId) return;
+  backend.importTextArtifact(selectedInvestigationId, artifactKindNode.value, "TRIGGER", artifactTextNode.value, (response) => {
+    handleMutation(response, "Artifact encrypted and attached.");
+    if (response?.ok) {
+      artifactForm.reset();
+      loadInvestigation(selectedInvestigationId);
+    }
+  });
+});
+
+evidenceForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  if (!backend || !selectedInvestigationId) return;
+  const artifacts = selectedInvestigationDetail?.artifacts ?? [];
+  const artifactId = artifacts.length ? artifacts[artifacts.length - 1].id : 0;
+  backend.addEvidence(
+    selectedInvestigationId,
+    artifactId,
+    "OBSERVATION",
+    "DETERMINISTIC_ANALYSIS",
+    evidenceValueNode.value,
+    evidenceLocatorNode.value,
+    (response) => {
+      handleMutation(response, "Evidence recorded with provenance.");
+      if (response?.ok) {
+        evidenceForm.reset();
+        loadInvestigation(selectedInvestigationId);
+      }
+    },
+  );
+});
+
+claimForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  if (!backend || !selectedInvestigationId) return;
+  backend.createClaim(selectedInvestigationId, claimStatementNode.value, "USER", -1, (response) => {
+    handleMutation(response, "Hypothesis recorded.");
+    if (response?.ok) {
+      claimForm.reset();
+      loadInvestigation(selectedInvestigationId);
+    }
   });
 });
 
