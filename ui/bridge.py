@@ -71,6 +71,10 @@ class Bridge(QObject):
             lambda: self._controller.import_text_artifact(investigation_id, kind, role, text)
         )
 
+    @Slot(int, int, result="QVariant")
+    def analyzeArtifact(self, investigation_id: int, artifact_id: int) -> dict[str, object]:
+        return self._mutate(lambda: self._controller.analyze_artifact(investigation_id, artifact_id))
+
     @Slot(int, int, str, str, result="QVariant")
     def addUserEvidence(
         self,
