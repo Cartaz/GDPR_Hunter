@@ -60,6 +60,21 @@ def test_sms_analysis_extracts_url_host_and_phone(tmp_path):
     assert all(item.provenance is EvidenceProvenance.DETERMINISTIC_ANALYSIS for item in created)
 
 
+def test_phone_extraction_does_not_treat_iso_date_as_phone(tmp_path):
+    service = build_service(tmp_path)
+    investigation = service.create_investigation("Date")
+    assert investigation.id is not None
+
+    _artifact, created = import_and_analyze(
+        service,
+        investigation.id,
+        ArtifactKind.TEXT,
+        b"Request received on 2026-08-25.",
+    )
+
+    assert created == []
+
+
 def test_email_analysis_extracts_sender_reply_path_dkim_message_id_and_body_url(tmp_path):
     service = build_service(tmp_path)
     investigation = service.create_investigation("Marketing email")
