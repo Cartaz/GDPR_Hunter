@@ -23,16 +23,16 @@
       <header class="topbar">
         <div>
           <p class="eyebrow">LOCAL-FIRST PRIVACY CONTROL</p>
-          <h1>GDPR Cases</h1>
+          <h1>GDPR Hunter</h1>
         </div>
         <div id="milestone" class="badge">Loading…</div>
       </header>
 
       <section class="metric-grid" aria-label="Application status">
         <article class="card metric">
-          <span class="metric-label">Identifiers</span>
-          <strong id="identifier-count">0</strong>
-          <small>Encrypted locally</small>
+          <span class="metric-label">Investigations</span>
+          <strong id="investigation-count">0</strong>
+          <small>Evidence-driven</small>
         </article>
         <article class="card metric">
           <span class="metric-label">Targets</span>
@@ -48,9 +48,58 @@
 
       <section class="content-grid">
         <article class="card">
+          <p class="eyebrow">INVESTIGATOR CORE</p>
+          <h2>Investigations</h2>
+          <p class="muted">Create an evidence-backed investigation. M4 does not perform web research or LLM inference yet.</p>
+          <form id="investigation-form" class="stack-form">
+            <label for="investigation-title">Question or title</label>
+            <input id="investigation-title" autocomplete="off" placeholder="Where did this company get my phone number?">
+            <button type="submit">Create investigation</button>
+          </form>
+          <div id="investigation-list" class="record-list" aria-live="polite"></div>
+        </article>
+
+        <article class="card">
+          <p class="eyebrow">EVIDENCE WORKBENCH</p>
+          <h2 id="investigation-detail-title">Select an investigation</h2>
+          <div id="investigation-detail-empty" class="muted">No investigation selected.</div>
+          <div id="investigation-detail" hidden>
+            <form id="artifact-form" class="stack-form">
+              <label for="artifact-kind">Artifact type</label>
+              <select id="artifact-kind">
+                <option value="SMS">SMS</option>
+                <option value="EMAIL">Email text</option>
+                <option value="TEXT">Text</option>
+                <option value="COMPANY_RESPONSE">Company response</option>
+              </select>
+              <label for="artifact-text">Raw artifact</label>
+              <textarea id="artifact-text" rows="4" required></textarea>
+              <button type="submit">Import encrypted artifact</button>
+            </form>
+
+            <form id="evidence-form" class="stack-form compact-form">
+              <label for="evidence-value">Evidence observation</label>
+              <input id="evidence-value" required placeholder="Observed sender domain: example.com">
+              <label for="evidence-locator">Source locator</label>
+              <input id="evidence-locator" placeholder="sms.body or email.header.from">
+              <button type="submit">Add deterministic evidence</button>
+            </form>
+
+            <form id="claim-form" class="stack-form compact-form">
+              <label for="claim-statement">Claim / hypothesis</label>
+              <input id="claim-statement" required placeholder="Example Corp appears to possess this phone number">
+              <button type="submit">Add hypothesis</button>
+            </form>
+
+            <div id="investigation-detail-list" class="record-list"></div>
+          </div>
+        </article>
+      </section>
+
+      <section class="content-grid lower-grid">
+        <article class="card">
           <p class="eyebrow">TARGET REGISTRY</p>
           <h2>Add data holder</h2>
-          <p class="muted">Store the organization and optional public privacy contact used for requests.</p>
           <form id="target-form" class="stack-form">
             <label for="target-name">Name</label>
             <input id="target-name" autocomplete="organization" required placeholder="Example Corp">
