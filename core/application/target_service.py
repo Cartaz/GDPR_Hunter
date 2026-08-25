@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import sqlite3
 
 from core.domain.target import Target
 from core.storage.target_repository import TargetRepository
@@ -31,11 +32,16 @@ class TargetService:
         ):
             raise ValueError("Privacy email is invalid")
 
-        return self._repository.create(
-            normalized_name,
-            normalized_domain or None,
-            normalized_email or None,
-        )
+        try:
+            return self._repository.create(
+                normalized_name,
+                normalized_domain or None,
+                normalized_email or None,
+            )
+        except sqlite3.IntegrityError as exc:
+            if normalized_domain:
+                raise ValueError("Target domain is already registered") from exc
+            raise
 
     def get_target(self, target_id: int) -> Target:
         target = self._repository.get(target_id)
