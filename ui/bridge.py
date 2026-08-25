@@ -6,7 +6,6 @@ from PySide6.QtCore import QObject, Signal, Slot
 
 from core.application.app_controller import AppController
 
-
 _LOG = logging.getLogger(__name__)
 
 
