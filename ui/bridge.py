@@ -53,8 +53,86 @@ class Bridge(QObject):
 
     @Slot(int, result="QVariant")
     def getCaseTimeline(self, case_id: int) -> list[dict[str, object]] | dict[str, object]:
+        return self._read(lambda: self._controller.get_case_timeline(case_id))
+
+    @Slot(str, result="QVariant")
+    def createInvestigation(self, title: str) -> dict[str, object]:
+        return self._mutate(lambda: self._controller.create_investigation(title))
+
+    @Slot(int, str, result="QVariant")
+    def transitionInvestigation(self, investigation_id: int, target_status: str) -> dict[str, object]:
+        return self._mutate(
+            lambda: self._controller.transition_investigation(investigation_id, target_status)
+        )
+
+    @Slot(int, str, str, str, result="QVariant")
+    def importTextArtifact(
+        self,
+        investigation_id: int,
+        kind: str,
+        role: str,
+        text: str,
+    ) -> dict[str, object]:
+        return self._mutate(
+            lambda: self._controller.import_text_artifact(investigation_id, kind, role, text)
+        )
+
+    @Slot(int, int, str, str, str, str, result="QVariant")
+    def addEvidence(
+        self,
+        investigation_id: int,
+        artifact_id: int,
+        kind: str,
+        provenance: str,
+        value: str,
+        source_locator: str,
+    ) -> dict[str, object]:
+        return self._mutate(
+            lambda: self._controller.add_evidence(
+                investigation_id,
+                artifact_id or None,
+                kind,
+                provenance,
+                value or None,
+                source_locator or None,
+            )
+        )
+
+    @Slot(int, str, str, float, result="QVariant")
+    def createClaim(
+        self,
+        investigation_id: int,
+        statement: str,
+        provenance: str,
+        confidence: float,
+    ) -> dict[str, object]:
+        parsed_confidence = confidence if confidence >= 0.0 else None
+        return self._mutate(
+            lambda: self._controller.create_claim(
+                investigation_id,
+                statement,
+                provenance,
+                parsed_confidence,
+            )
+        )
+
+    @Slot(int, int, str, result="QVariant")
+    def attachClaimEvidence(self, claim_id: int, evidence_id: int, relation: str) -> dict[str, object]:
+        return self._mutate(
+            lambda: self._controller.attach_claim_evidence(claim_id, evidence_id, relation)
+        )
+
+    @Slot(int, str, result="QVariant")
+    def transitionClaim(self, claim_id: int, target_status: str) -> dict[str, object]:
+        return self._mutate(lambda: self._controller.transition_claim(claim_id, target_status))
+
+    @Slot(int, result="QVariant")
+    def getInvestigationDetail(self, investigation_id: int) -> dict[str, object]:
+        return self._read(lambda: self._controller.get_investigation_detail(investigation_id))
+
+    def _read(self, operation):
         try:
-            return self._controller.get_case_timeline(case_id)
+            return operation()
         except (ValueError, LookupError) as exc:
             return self._fail("INVALID_INPUT", str(exc))
 
