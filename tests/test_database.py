@@ -32,6 +32,53 @@ def test_orphan_identifier_is_rejected(tmp_path):
         )
 
 
+def test_v1_database_is_migrated_without_losing_existing_rows(tmp_path):
+    database_path = tmp_path / "v1.sqlite3"
+    connection = sqlite3.connect(database_path)
+    try:
+        connection.executescript(
+            """
+            CREATE TABLE schema_meta (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                schema_version INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                last_migrated_at TEXT NOT NULL
+            );
+            CREATE TABLE identities (
+                id INTEGER PRIMARY KEY,
+                display_name_enc BLOB,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE TABLE identifiers (
+                id INTEGER PRIMARY KEY,
+                identity_id INTEGER NOT NULL REFERENCES identities(id) ON DELETE CASCADE,
+                kind TEXT NOT NULL,
+                value_enc BLOB NOT NULL,
+                label_enc BLOB,
+                active INTEGER NOT NULL CHECK (active IN (0, 1)),
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            INSERT INTO schema_meta VALUES (1, 1, 'old', 'old');
+            INSERT INTO identities VALUES (1, NULL, 'old', 'old');
+            """
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    database = Database(database_path)
+    database.initialize()
+
+    with database.connect() as migrated:
+        assert migrated.execute("SELECT schema_version FROM schema_meta WHERE id = 1").fetchone()[0] == 2
+        assert migrated.execute("SELECT COUNT(*) FROM identities").fetchone()[0] == 1
+        assert migrated.execute(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN ('targets', 'cases', 'case_events')"
+        ).fetchone()[0] == 3
+
+
 def test_newer_database_schema_is_rejected_safely(tmp_path):
     database_path = tmp_path / "future.sqlite3"
     connection = sqlite3.connect(database_path)
@@ -46,9 +93,7 @@ def test_newer_database_schema_is_rejected_safely(tmp_path):
             )
             """
         )
-        connection.execute(
-            "INSERT INTO schema_meta VALUES (1, 999, 'future', 'future')"
-        )
+        connection.execute("INSERT INTO schema_meta VALUES (1, 999, 'future', 'future')")
         connection.commit()
     finally:
         connection.close()
