@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      QT_QPA_PLATFORM: offscreen
+      QTWEBENGINE_CHROMIUM_FLAGS: --disable-gpu
+      QTWEBENGINE_DISABLE_SANDBOX: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: |
+          chmod +x install.sh
+          ./install.sh
+
+      - name: Compile
+        run: .venv/bin/python -m compileall -q main.py config core ui tests
+
+      - name: Ruff
+        run: .venv/bin/ruff check main.py config core ui tests
+
+      - name: Pytest
+        run: .venv/bin/python -m pytest
