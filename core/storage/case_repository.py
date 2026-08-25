@@ -35,12 +35,12 @@ class CaseRepository:
         return self._case_from_row(row)
 
     def get(self, case_id: int) -> Case | None:
-        with self._database.connect() as connection:
+        with self._database.connection_scope() as connection:
             row = connection.execute("SELECT * FROM cases WHERE id = ?", (case_id,)).fetchone()
         return self._case_from_row(row) if row is not None else None
 
     def list_all(self) -> list[Case]:
-        with self._database.connect() as connection:
+        with self._database.connection_scope() as connection:
             rows = connection.execute("SELECT * FROM cases ORDER BY created_at DESC, id DESC").fetchall()
         return [self._case_from_row(row) for row in rows]
 
@@ -69,7 +69,7 @@ class CaseRepository:
         return self._case_from_row(row)
 
     def list_events(self, case_id: int) -> list[CaseEvent]:
-        with self._database.connect() as connection:
+        with self._database.connection_scope() as connection:
             rows = connection.execute(
                 "SELECT * FROM case_events WHERE case_id = ? ORDER BY id",
                 (case_id,),
