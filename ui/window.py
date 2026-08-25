@@ -12,6 +12,16 @@ from PySide6.QtWidgets import QMainWindow
 from ui.bridge import Bridge
 
 
+def is_allowed_local_url(url: QUrl, allowed_root: Path) -> bool:
+    if not url.isLocalFile():
+        return False
+    try:
+        candidate = Path(url.toLocalFile()).resolve()
+        return candidate.is_relative_to(allowed_root.resolve())
+    except (OSError, RuntimeError):
+        return False
+
+
 class LocalOnlyPage(QWebEnginePage):
     def __init__(self, allowed_root: Path, parent=None) -> None:
         super().__init__(parent)
@@ -21,17 +31,10 @@ class LocalOnlyPage(QWebEnginePage):
         if url.scheme() in {"qrc", "about"}:
             return True
         if url.isLocalFile():
-            return self._is_allowed_local_file(url)
+            return is_allowed_local_url(url, self._allowed_root)
         if is_main_frame and url.scheme() in {"http", "https"}:
             QDesktopServices.openUrl(url)
         return False
-
-    def _is_allowed_local_file(self, url: QUrl) -> bool:
-        try:
-            candidate = Path(url.toLocalFile()).resolve()
-            return candidate.is_relative_to(self._allowed_root)
-        except (OSError, RuntimeError):
-            return False
 
 
 class MainWindow(QMainWindow):
