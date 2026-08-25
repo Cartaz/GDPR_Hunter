@@ -295,8 +295,12 @@ class Database:
                     event_type TEXT NOT NULL CHECK (
                         event_type IN ('CREATED', 'STATUS_CHANGED', 'REQUEST_SUBMITTED', 'EXTENSION_RECORDED')
                     ),
-                    from_status TEXT,
-                    to_status TEXT,
+                    from_status TEXT CHECK (
+                        from_status IS NULL OR from_status IN ('DRAFT', 'AWAITING_RESPONSE', 'COMPLETED', 'CANCELLED')
+                    ),
+                    to_status TEXT CHECK (
+                        to_status IS NULL OR to_status IN ('DRAFT', 'AWAITING_RESPONSE', 'COMPLETED', 'CANCELLED')
+                    ),
                     created_at TEXT NOT NULL
                 )
                 """
