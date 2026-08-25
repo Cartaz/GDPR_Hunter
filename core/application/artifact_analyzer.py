@@ -23,20 +23,10 @@ class EvidenceCandidate:
     source_locator: str
 
 
-@dataclass(frozen=True, slots=True)
-class AnalysisResult:
-    analyzer: str
-    version: int
-    findings: tuple[EvidenceCandidate, ...]
-
-
 class ArtifactAnalyzer:
     """Extract bounded, deterministic observations from immutable artifacts."""
 
-    ANALYZER = "builtin-artifact-analyzer"
-    VERSION = 1
-
-    def analyze(self, kind: ArtifactKind, payload: bytes) -> AnalysisResult:
+    def analyze(self, kind: ArtifactKind, payload: bytes) -> tuple[EvidenceCandidate, ...]:
         if kind is ArtifactKind.EMAIL:
             findings = self._analyze_email(payload)
         elif kind is ArtifactKind.URL:
@@ -45,7 +35,7 @@ class ArtifactAnalyzer:
             findings = self._analyze_text(payload)
         else:
             findings = ()
-        return AnalysisResult(self.ANALYZER, self.VERSION, self._deduplicate(findings))
+        return self._deduplicate(findings)
 
     def _analyze_text(self, payload: bytes) -> tuple[EvidenceCandidate, ...]:
         text = self._decode_text(payload)
@@ -130,7 +120,9 @@ class ArtifactAnalyzer:
 
     @staticmethod
     def _extract_urls(text: str) -> tuple[str, ...]:
-        return tuple(match.group(0).rstrip(_TRAILING_URL_PUNCTUATION) for match in _URL_RE.finditer(text))
+        return tuple(
+            match.group(0).rstrip(_TRAILING_URL_PUNCTUATION) for match in _URL_RE.finditer(text)
+        )
 
     @staticmethod
     def _extract_phones(text: str) -> tuple[str, ...]:
@@ -138,7 +130,7 @@ class ArtifactAnalyzer:
         for match in _PHONE_RE.finditer(text):
             raw = match.group(0).strip()
             digits = re.sub(r"\D", "", raw)
-            if 7 <= len(digits) <= 15:
+            if 9 <= len(digits) <= 15:
                 values.append(raw)
         return tuple(values)
 
@@ -170,14 +162,19 @@ class ArtifactAnalyzer:
 
     @classmethod
     def _extract_email_domains(cls, value: str) -> tuple[str, ...]:
-        return tuple(cls._normalize_host(match.group(1).rstrip(">")) for match in _EMAIL_DOMAIN_RE.finditer(value))
+        return tuple(
+            cls._normalize_host(match.group(1).rstrip(">")) for match in _EMAIL_DOMAIN_RE.finditer(value)
+        )
 
     @staticmethod
     def _email_text_body(message) -> str:
         if message.is_multipart():
             chunks: list[str] = []
             for part in message.walk():
-                if part.get_content_type() != "text/plain" or part.get_content_disposition() == "attachment":
+                if (
+                    part.get_content_type() != "text/plain"
+                    or part.get_content_disposition() == "attachment"
+                ):
                     continue
                 try:
                     chunks.append(part.get_content())
