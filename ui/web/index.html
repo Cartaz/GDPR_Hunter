@@ -14,8 +14,8 @@
         <button class="nav-item selected" type="button">Dashboard</button>
         <button class="nav-item" type="button" disabled>Investigations</button>
         <button class="nav-item" type="button" disabled>Exposures</button>
-        <button class="nav-item" type="button" disabled>Cases</button>
-        <button class="nav-item" type="button" disabled>Targets</button>
+        <button class="nav-item" type="button">Cases</button>
+        <button class="nav-item" type="button">Targets</button>
       </nav>
     </aside>
 
@@ -23,52 +23,71 @@
       <header class="topbar">
         <div>
           <p class="eyebrow">LOCAL-FIRST PRIVACY CONTROL</p>
-          <h1>Foundation</h1>
+          <h1>Registry &amp; Cases</h1>
         </div>
         <div id="milestone" class="badge">Loading…</div>
       </header>
 
-      <section class="metric-grid" aria-label="Foundation status">
+      <section class="metric-grid" aria-label="Application status">
         <article class="card metric">
           <span class="metric-label">Identifiers</span>
           <strong id="identifier-count">0</strong>
           <small>Encrypted locally</small>
         </article>
         <article class="card metric">
-          <span class="metric-label">Investigator</span>
-          <strong class="pending">Planned</strong>
-          <small>Not active in M1</small>
+          <span class="metric-label">Targets</span>
+          <strong id="target-count">0</strong>
+          <small>Registered data holders</small>
         </article>
         <article class="card metric">
-          <span class="metric-label">Inference</span>
-          <strong class="pending">Offline</strong>
-          <small>No LLM calls in M1</small>
+          <span class="metric-label">Cases</span>
+          <strong id="case-count">0</strong>
+          <small>Canonical Python workflow</small>
         </article>
       </section>
 
       <section class="content-grid">
         <article class="card">
+          <p class="eyebrow">TARGET REGISTRY</p>
+          <h2>Add data holder</h2>
+          <p class="muted">Store the organization and optional public privacy contact used for future requests.</p>
+          <form id="target-form" class="stack-form">
+            <label for="target-name">Name</label>
+            <input id="target-name" autocomplete="organization" required placeholder="Example Corp">
+            <label for="target-domain">Domain</label>
+            <input id="target-domain" autocomplete="off" placeholder="example.com">
+            <label for="privacy-email">Privacy email</label>
+            <input id="privacy-email" type="email" autocomplete="off" placeholder="privacy@example.com">
+            <button type="submit">Add target</button>
+          </form>
+          <div id="target-list" class="record-list" aria-live="polite"></div>
+        </article>
+
+        <article class="card">
+          <p class="eyebrow">CASE WORKFLOW</p>
+          <h2>Cases</h2>
+          <p class="muted">Cases begin as drafts. Lifecycle transitions are validated by Python and recorded in an append-only timeline.</p>
+          <div id="case-list" class="record-list" aria-live="polite"></div>
+        </article>
+      </section>
+
+      <section class="content-grid lower-grid">
+        <article class="card">
           <p class="eyebrow">IDENTITY VAULT</p>
           <h2>Local profile</h2>
-          <p class="muted">Sensitive values are encrypted before they reach SQLite.</p>
           <form id="name-form" class="form-row">
             <label for="display-name">Display name</label>
             <div class="inline-control">
-              <input id="display-name" name="display-name" autocomplete="off" placeholder="Optional display name">
+              <input id="display-name" autocomplete="off" placeholder="Optional display name">
               <button type="submit">Save</button>
             </div>
           </form>
         </article>
 
         <article class="card">
-          <p class="eyebrow">ARCHITECTURE</p>
-          <h2>M1 boundaries</h2>
-          <ul class="status-list">
-            <li><span>Python canonical state</span><b>Active</b></li>
-            <li><span>Local-only WebEngine</span><b>Active</b></li>
-            <li><span>Encrypted sensitive store</span><b>Active</b></li>
-            <li><span>Investigator / LLM</span><b class="pending-text">Later</b></li>
-          </ul>
+          <p class="eyebrow">TIMELINE</p>
+          <h2 id="timeline-title">Select a case</h2>
+          <div id="timeline-list" class="record-list muted">No case selected.</div>
         </article>
       </section>
 
