@@ -90,13 +90,13 @@ class InvestigationService:
         if artifact is None:
             raise LookupError("Artifact is not attached to this investigation")
         payload = self._artifact_store.read(artifact.storage_key)
-        result = self._artifact_analyzer.analyze(artifact.kind, payload)
+        findings = self._artifact_analyzer.analyze(artifact.kind, payload)
         existing = {
             (item.artifact_id, item.kind, item.provenance, item.value, item.source_locator)
             for item in self._repository.list_evidence(investigation_id)
         }
         created: list[Evidence] = []
-        for candidate in result.findings:
+        for candidate in findings:
             key = (
                 artifact_id,
                 candidate.kind,
