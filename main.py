@@ -9,6 +9,7 @@ from PySide6.QtWidgets import QApplication, QMessageBox
 
 from config.settings import SettingsStore
 from core.application.app_controller import AppController
+from core.application.artifact_analyzer import ArtifactAnalyzer
 from core.application.case_service import CaseService
 from core.application.deadline_engine import DeadlineEngine
 from core.application.identity_service import IdentityService
@@ -61,6 +62,7 @@ def build_controller() -> tuple[AppController, SettingsStore]:
         InvestigationRepository(database, sensitive_store),
         ArtifactStore(paths.artifacts_dir, sensitive_store),
         identity_service,
+        ArtifactAnalyzer(),
     )
     return (
         AppController(identity_service, target_service, case_service, investigation_service),
