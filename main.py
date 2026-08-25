@@ -18,7 +18,6 @@ from core.storage.sensitive_store import SensitiveStore
 from ui.bridge import Bridge
 from ui.window import MainWindow
 
-
 _LOG = logging.getLogger(__name__)
 ROOT_DIR = Path(__file__).resolve().parent
 
