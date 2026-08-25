@@ -71,12 +71,48 @@ def test_v1_database_is_migrated_without_losing_existing_rows(tmp_path):
     database = Database(database_path)
     database.initialize()
 
-    with database.connect() as migrated:
-        assert migrated.execute("SELECT schema_version FROM schema_meta WHERE id = 1").fetchone()[0] == 2
+    with database.connection_scope() as migrated:
+        assert migrated.execute("SELECT schema_version FROM schema_meta WHERE id = 1").fetchone()[0] == 3
         assert migrated.execute("SELECT COUNT(*) FROM identities").fetchone()[0] == 1
         assert migrated.execute(
             "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN ('targets', 'cases', 'case_events')"
         ).fetchone()[0] == 3
+
+
+def test_v2_open_case_migrates_to_awaiting_response_without_data_loss(tmp_path):
+    database_path = tmp_path / "v2.sqlite3"
+    database = Database(database_path)
+    database.CURRENT_SCHEMA_VERSION = 2
+    database.initialize()
+
+    with database.transaction() as connection:
+        connection.execute("INSERT INTO identities VALUES (1, NULL, 'old', 'old')")
+        connection.execute(
+            "INSERT INTO targets VALUES (1, 'Example Corp', 'example.com', NULL, 'old', 'old')"
+        )
+        connection.execute(
+            "INSERT INTO cases VALUES (1, 1, 1, 'OPEN', 'old', 'old')"
+        )
+        connection.execute(
+            "INSERT INTO case_events VALUES (1, 1, 'STATUS_CHANGED', 'DRAFT', 'OPEN', 'old')"
+        )
+
+    Database(database_path).initialize()
+
+    with Database(database_path).connection_scope() as migrated:
+        case = migrated.execute(
+            "SELECT right_type, status, received_on, extension_notified_on FROM cases WHERE id = 1"
+        ).fetchone()
+        event = migrated.execute(
+            "SELECT from_status, to_status FROM case_events WHERE id = 1"
+        ).fetchone()
+        assert case is not None
+        assert case["right_type"] == "UNSPECIFIED"
+        assert case["status"] == "AWAITING_RESPONSE"
+        assert case["received_on"] is None
+        assert case["extension_notified_on"] is None
+        assert event["from_status"] == "DRAFT"
+        assert event["to_status"] == "AWAITING_RESPONSE"
 
 
 def test_newer_database_schema_is_rejected_safely(tmp_path):
