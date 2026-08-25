@@ -379,15 +379,13 @@ evidenceForm.addEventListener("submit", (event) => {
   if (!backend || !selectedInvestigationId) return;
   const artifacts = selectedInvestigationDetail?.artifacts ?? [];
   const artifactId = artifacts.length ? artifacts[artifacts.length - 1].id : 0;
-  backend.addEvidence(
+  backend.addUserEvidence(
     selectedInvestigationId,
     artifactId,
-    "OBSERVATION",
-    "DETERMINISTIC_ANALYSIS",
     evidenceValueNode.value,
     evidenceLocatorNode.value,
     (response) => {
-      handleMutation(response, "Evidence recorded with provenance.");
+      handleMutation(response, "User-observed evidence recorded with provenance.");
       if (response?.ok) {
         evidenceForm.reset();
         loadInvestigation(selectedInvestigationId);
@@ -399,8 +397,8 @@ evidenceForm.addEventListener("submit", (event) => {
 claimForm.addEventListener("submit", (event) => {
   event.preventDefault();
   if (!backend || !selectedInvestigationId) return;
-  backend.createClaim(selectedInvestigationId, claimStatementNode.value, "USER", -1, (response) => {
-    handleMutation(response, "Hypothesis recorded.");
+  backend.createUserClaim(selectedInvestigationId, claimStatementNode.value, (response) => {
+    handleMutation(response, "User hypothesis recorded.");
     if (response?.ok) {
       claimForm.reset();
       loadInvestigation(selectedInvestigationId);
