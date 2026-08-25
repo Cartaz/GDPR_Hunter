@@ -6,8 +6,18 @@ from contextlib import contextmanager
 from pathlib import Path
 
 
+class DatabaseSchemaError(RuntimeError):
+    pass
+
+
+class UnsupportedSchemaVersion(DatabaseSchemaError):
+    pass
+
+
 class Database:
-    """Own SQLite connection setup and transactional access."""
+    """Own SQLite connection setup, schema compatibility, and transactions."""
+
+    CURRENT_SCHEMA_VERSION = 1
 
     def __init__(self, path: Path) -> None:
         self._path = path
@@ -19,6 +29,12 @@ class Database:
     def initialize(self) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
         with self.connect() as connection:
+            existing_version = self._existing_schema_version(connection)
+            if existing_version is not None and existing_version != self.CURRENT_SCHEMA_VERSION:
+                raise UnsupportedSchemaVersion(
+                    f"Database schema version {existing_version} is not supported by this application version"
+                )
+
             connection.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS schema_meta (
@@ -53,8 +69,9 @@ class Database:
             connection.execute(
                 """
                 INSERT OR IGNORE INTO schema_meta(id, schema_version, created_at, last_migrated_at)
-                VALUES (1, 1, datetime('now'), datetime('now'))
-                """
+                VALUES (1, ?, datetime('now'), datetime('now'))
+                """,
+                (self.CURRENT_SCHEMA_VERSION,),
             )
 
     def connect(self) -> sqlite3.Connection:
@@ -75,3 +92,22 @@ class Database:
                 yield connection
         finally:
             connection.close()
+
+    @staticmethod
+    def _existing_schema_version(connection: sqlite3.Connection) -> int | None:
+        table_exists = connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'schema_meta'"
+        ).fetchone()
+        if table_exists is None:
+            return None
+
+        try:
+            row = connection.execute(
+                "SELECT schema_version FROM schema_meta WHERE id = 1"
+            ).fetchone()
+        except sqlite3.Error as exc:
+            raise DatabaseSchemaError("Database schema metadata is malformed") from exc
+
+        if row is None or isinstance(row["schema_version"], bool) or not isinstance(row["schema_version"], int):
+            raise DatabaseSchemaError("Database schema metadata is missing or invalid")
+        return int(row["schema_version"])
