@@ -59,12 +59,6 @@ class Bridge(QObject):
     def createInvestigation(self, title: str) -> dict[str, object]:
         return self._mutate(lambda: self._controller.create_investigation(title))
 
-    @Slot(int, str, result="QVariant")
-    def transitionInvestigation(self, investigation_id: int, target_status: str) -> dict[str, object]:
-        return self._mutate(
-            lambda: self._controller.transition_investigation(investigation_id, target_status)
-        )
-
     @Slot(int, str, str, str, result="QVariant")
     def importTextArtifact(
         self,
