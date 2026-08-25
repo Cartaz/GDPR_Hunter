@@ -166,6 +166,14 @@ def test_v2_open_case_migrates_to_awaiting_response_without_data_loss(tmp_path):
         assert event["from_status"] == "DRAFT"
         assert event["to_status"] == "AWAITING_RESPONSE"
 
+    with pytest.raises(sqlite3.IntegrityError), database.transaction() as migrated:
+        migrated.execute(
+            """
+            INSERT INTO case_events(case_id, event_type, from_status, to_status, created_at)
+            VALUES (1, 'STATUS_CHANGED', 'INVALID', 'COMPLETED', 'now')
+            """
+        )
+
 
 def test_newer_database_schema_is_rejected_safely(tmp_path):
     database_path = tmp_path / "future.sqlite3"
