@@ -50,7 +50,7 @@
         <article class="card">
           <p class="eyebrow">INVESTIGATOR CORE</p>
           <h2>Investigations</h2>
-          <p class="muted">Create an evidence-backed investigation. M4 does not perform web research or LLM inference yet.</p>
+          <p class="muted">Create an evidence-backed investigation. M5 can parse supported local artifacts deterministically; web research and LLM inference remain disabled.</p>
           <form id="investigation-form" class="stack-form">
             <label for="investigation-title">Question or title</label>
             <input id="investigation-title" autocomplete="off" placeholder="Where did this company get my phone number?">
@@ -69,6 +69,7 @@
               <select id="artifact-kind">
                 <option value="SMS">SMS</option>
                 <option value="EMAIL">Email text</option>
+                <option value="URL">URL</option>
                 <option value="TEXT">Text</option>
                 <option value="COMPANY_RESPONSE">Company response</option>
               </select>
