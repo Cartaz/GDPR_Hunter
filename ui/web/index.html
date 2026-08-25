@@ -23,7 +23,7 @@
       <header class="topbar">
         <div>
           <p class="eyebrow">LOCAL-FIRST PRIVACY CONTROL</p>
-          <h1>Registry &amp; Cases</h1>
+          <h1>GDPR Cases</h1>
         </div>
         <div id="milestone" class="badge">Loading…</div>
       </header>
@@ -42,7 +42,7 @@
         <article class="card metric">
           <span class="metric-label">Cases</span>
           <strong id="case-count">0</strong>
-          <small>Canonical Python workflow</small>
+          <small>Rights + calendar deadlines</small>
         </article>
       </section>
 
@@ -50,7 +50,7 @@
         <article class="card">
           <p class="eyebrow">TARGET REGISTRY</p>
           <h2>Add data holder</h2>
-          <p class="muted">Store the organization and optional public privacy contact used for future requests.</p>
+          <p class="muted">Store the organization and optional public privacy contact used for requests.</p>
           <form id="target-form" class="stack-form">
             <label for="target-name">Name</label>
             <input id="target-name" autocomplete="organization" required placeholder="Example Corp">
@@ -64,9 +64,12 @@
         </article>
 
         <article class="card">
-          <p class="eyebrow">CASE WORKFLOW</p>
+          <p class="eyebrow">RIGHTS POLICY</p>
           <h2>Cases</h2>
-          <p class="muted">Cases begin as drafts. Lifecycle transitions are validated by Python and recorded in an append-only timeline.</p>
+          <label for="case-right">Right for new cases</label>
+          <select id="case-right" aria-describedby="right-summary"></select>
+          <p id="right-summary" class="muted policy-summary"></p>
+          <p class="muted">Record the date the controller received the request. Python calculates calendar-month deadlines; jurisdiction-specific public holidays still require review.</p>
           <div id="case-list" class="record-list" aria-live="polite"></div>
         </article>
       </section>
