@@ -25,8 +25,7 @@ function connectBackend() {
 
   new QWebChannel(qt.webChannelTransport, (channel) => {
     backend = channel.objects.backend;
-    renderState(backend.getBootstrapState());
-
+    backend.getBootstrapState((state) => renderState(state));
     backend.stateChanged.connect((state) => renderState(state));
     backend.operationFailed.connect((_code, message) => setStatus(message, true));
   });
@@ -38,12 +37,14 @@ nameForm.addEventListener("submit", (event) => {
     setStatus("Native backend is unavailable.", true);
     return;
   }
-  const response = backend.setDisplayName(displayNameNode.value);
-  if (response?.ok) {
-    setStatus("Profile saved locally.");
-  } else if (response?.error?.message) {
-    setStatus(response.error.message, true);
-  }
+
+  backend.setDisplayName(displayNameNode.value, (response) => {
+    if (response?.ok) {
+      setStatus("Profile saved locally.");
+    } else if (response?.error?.message) {
+      setStatus(response.error.message, true);
+    }
+  });
 });
 
 connectBackend();
