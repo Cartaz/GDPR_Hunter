@@ -3,17 +3,19 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
+from core.domain.rights import CaseRight
+
 
 class CaseStatus(StrEnum):
     DRAFT = "DRAFT"
-    OPEN = "OPEN"
+    AWAITING_RESPONSE = "AWAITING_RESPONSE"
     COMPLETED = "COMPLETED"
     CANCELLED = "CANCELLED"
 
 
 _ALLOWED_TRANSITIONS: dict[CaseStatus, frozenset[CaseStatus]] = {
-    CaseStatus.DRAFT: frozenset({CaseStatus.OPEN, CaseStatus.CANCELLED}),
-    CaseStatus.OPEN: frozenset({CaseStatus.COMPLETED, CaseStatus.CANCELLED}),
+    CaseStatus.DRAFT: frozenset({CaseStatus.AWAITING_RESPONSE, CaseStatus.CANCELLED}),
+    CaseStatus.AWAITING_RESPONSE: frozenset({CaseStatus.COMPLETED, CaseStatus.CANCELLED}),
     CaseStatus.COMPLETED: frozenset(),
     CaseStatus.CANCELLED: frozenset(),
 }
@@ -29,9 +31,12 @@ class Case:
     id: int | None
     identity_id: int
     target_id: int
+    right: CaseRight
     status: CaseStatus
     created_at: str
     updated_at: str
+    received_on: str | None = None
+    extension_notified_on: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
