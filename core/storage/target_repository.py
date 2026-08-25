@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import sqlite3
+
 from core.domain.target import Target
 from core.storage.database import Database
 
@@ -26,17 +28,17 @@ class TargetRepository:
         return self._from_row(row)
 
     def get(self, target_id: int) -> Target | None:
-        with self._database.connect() as connection:
+        with self._database.connection_scope() as connection:
             row = connection.execute("SELECT * FROM targets WHERE id = ?", (target_id,)).fetchone()
         return self._from_row(row) if row is not None else None
 
     def list_all(self) -> list[Target]:
-        with self._database.connect() as connection:
+        with self._database.connection_scope() as connection:
             rows = connection.execute("SELECT * FROM targets ORDER BY name COLLATE NOCASE, id").fetchall()
         return [self._from_row(row) for row in rows]
 
     @staticmethod
-    def _from_row(row) -> Target:
+    def _from_row(row: sqlite3.Row) -> Target:
         return Target(
             id=int(row["id"]),
             name=str(row["name"]),
