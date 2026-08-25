@@ -4,9 +4,16 @@ GDPR Hunter is a local-first desktop privacy application under active developmen
 
 ## Current status
 
-Milestone **M1 — Foundation** is in progress. The current codebase provides the desktop application skeleton, settings, persistence/security foundations, identity storage, encrypted artifact storage, QWebChannel bridge, and local HTML UI shell.
+Milestone **M2 — Target Registry + Case Workflow** is implemented. The current codebase provides the desktop foundation from M1 plus:
 
-Investigator, LLM inference, web research, GDPR request workflows, exposure discovery, monitoring, and escalation are planned but are **not implemented yet**.
+- a local Target registry for data holders/controllers;
+- deterministic database migration from schema v1 to v2;
+- Case creation linked to the local Identity and a Target;
+- a Python-owned Case state machine (`DRAFT`, `OPEN`, `COMPLETED`, `CANCELLED`);
+- append-only Case timeline events persisted atomically with lifecycle transitions;
+- local UI controls for Target creation, Case creation/transitions, and timeline inspection.
+
+Investigator, LLM inference, web research, GDPR rights/deadline policy, request delivery, exposure discovery, monitoring, and escalation are planned but are **not implemented yet**.
 
 ## Architecture
 
@@ -41,4 +48,4 @@ chmod +x install.sh
 
 ## Security posture
 
-The application is designed around local-first processing, explicit outbound-data control, local-only WebEngine content, redacted diagnostics, and strict separation between future LLM inference and canonical application state.
+The application is designed around local-first processing, explicit outbound-data control, local-only WebEngine content, redacted diagnostics, append-only workflow evidence, and strict separation between future LLM inference and canonical application state.
