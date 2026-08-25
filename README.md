@@ -4,9 +4,20 @@ GDPR Hunter is a local-first desktop privacy application under active developmen
 
 ## Current status
 
-Milestone **M3 — Rights Policy + Deadline Engine** is implemented. The current codebase provides the desktop foundation, encrypted identity/artifact storage, Target Registry, GDPR Case workflow, deterministic rights policy for the initial supported use cases, and calendar-based Article 12 deadline tracking.
+Milestone **M4 — Investigator Core + Evidence Model** is implemented. The current codebase provides the desktop foundation, encrypted identity/artifact storage, Target Registry, GDPR Case workflow, deterministic rights/deadline logic, and a first evidence-backed Investigation workflow.
 
-Supported M3 GDPR workflows are:
+M4 adds:
+
+- Investigation lifecycle with explicit state transitions;
+- encrypted raw Artifact storage with immutable metadata;
+- Evidence records with mandatory provenance;
+- Claim/Hypothesis records kept distinct from Evidence;
+- explicit support/contradiction links between Evidence and Claims;
+- a rule that model-originated claims start as hypotheses and cannot become verified from confidence alone;
+- a rule that a verified Claim requires supporting Evidence;
+- a local Investigation workbench for creating investigations, importing text artifacts, recording evidence, and adding hypotheses.
+
+Supported GDPR Case workflows remain:
 
 - Article 15 access and provenance, including available source information when data were not collected from the data subject;
 - Article 17 erasure, with the application explicitly preserving the need for a case-specific ground and possible statutory exceptions;
@@ -14,7 +25,7 @@ Supported M3 GDPR workflows are:
 
 Cases record the date the controller received a request. Deadline calculations use calendar months rather than fixed 30-day intervals, roll weekend deadlines to the following working day, and support an injected public-holiday set. The current production workflow does not yet know the relevant jurisdiction-specific holiday calendar, so the UI explicitly flags that public-holiday review remains required.
 
-Investigator, LLM inference, web research, exposure discovery, automated delivery, monitoring, and escalation are planned but are **not implemented yet**.
+LLM inference, web research, automatic artifact analysis, exposure discovery, automated delivery, monitoring, and escalation are planned but are **not implemented yet**.
 
 ## Architecture
 
@@ -24,7 +35,9 @@ Investigator, LLM inference, web research, exposure discovery, automated deliver
 - QWebChannel with a single `backend` object
 - SQLite for operational persistence
 - Python owns canonical state and business logic
-- Sensitive personal data is encrypted before persistence
+- Sensitive personal/investigative data is encrypted before persistence
+- Raw Artifact bytes are stored encrypted outside SQLite behind `ArtifactStore`
+- `InvestigationService` is the sole application owner of Investigation/Evidence/Claim mutations
 - GDPR rights and deadline rules are deterministic Python modules; no LLM participates in legal workflow decisions
 
 ## Install
@@ -50,4 +63,4 @@ chmod +x install.sh
 
 ## Security posture
 
-The application is designed around local-first processing, explicit outbound-data control, local-only WebEngine content, redacted diagnostics, encrypted sensitive persistence, append-only Case timelines, and strict separation between future LLM inference and canonical application state.
+The application is designed around local-first processing, explicit outbound-data control, local-only WebEngine content, redacted diagnostics, encrypted sensitive persistence, append-only Case timelines, immutable Artifact metadata, evidence provenance, and strict separation between future LLM inference and canonical application state.
