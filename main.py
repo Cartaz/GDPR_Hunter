@@ -12,12 +12,15 @@ from core.application.app_controller import AppController
 from core.application.case_service import CaseService
 from core.application.deadline_engine import DeadlineEngine
 from core.application.identity_service import IdentityService
+from core.application.investigation_service import InvestigationService
 from core.application.paths import default_app_paths
 from core.application.target_service import TargetService
 from core.domain.rights import RightsPolicy
+from core.storage.artifact_store import ArtifactStore
 from core.storage.case_repository import CaseRepository
 from core.storage.database import Database
 from core.storage.identity_repository import IdentityRepository
+from core.storage.investigation_repository import InvestigationRepository
 from core.storage.secret_store import SecretStore, SecretStoreUnavailable
 from core.storage.sensitive_store import SensitiveStore
 from core.storage.target_repository import TargetRepository
@@ -54,7 +57,15 @@ def build_controller() -> tuple[AppController, SettingsStore]:
         RightsPolicy(),
         DeadlineEngine(),
     )
-    return AppController(identity_service, target_service, case_service), settings_store
+    investigation_service = InvestigationService(
+        InvestigationRepository(database, sensitive_store),
+        ArtifactStore(paths.artifacts_dir, sensitive_store),
+        identity_service,
+    )
+    return (
+        AppController(identity_service, target_service, case_service, investigation_service),
+        settings_store,
+    )
 
 
 def main() -> int:
