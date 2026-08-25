@@ -18,7 +18,6 @@ from core.domain.investigation import (
     EvidenceKind,
     EvidenceProvenance,
     Investigation,
-    InvestigationStatus,
 )
 from core.domain.rights import CaseRight, RightPolicy
 from core.domain.target import Target
@@ -108,13 +107,6 @@ class AppController:
 
     def create_investigation(self, title: str) -> dict[str, object]:
         return self._investigation_dto(self._investigation_service.create_investigation(title))
-
-    def transition_investigation(self, investigation_id: int, target_status: str) -> dict[str, object]:
-        try:
-            status = InvestigationStatus(target_status)
-        except ValueError as exc:
-            raise ValueError("Unsupported investigation status") from exc
-        return self._investigation_dto(self._investigation_service.transition(investigation_id, status))
 
     def import_text_artifact(
         self,
