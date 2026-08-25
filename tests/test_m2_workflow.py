@@ -37,6 +37,14 @@ def test_target_registry_normalizes_domain_and_lists_targets(tmp_path):
     assert target_service.list_targets() == [target]
 
 
+def test_duplicate_target_domain_becomes_validation_error(tmp_path):
+    _database, target_service, _case_service = build_services(tmp_path)
+    target_service.create_target("Example Corp", "example.com")
+
+    with pytest.raises(ValueError, match="already registered"):
+        target_service.create_target("Example Two", "EXAMPLE.COM")
+
+
 def test_case_workflow_records_append_only_timeline(tmp_path):
     database, target_service, case_service = build_services(tmp_path)
     target = target_service.create_target("Example Corp", "example.com")
