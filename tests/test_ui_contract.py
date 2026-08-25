@@ -4,7 +4,6 @@ from pathlib import Path
 
 from ui.window import LocalOnlyPage, MainWindow
 
-
 ROOT = Path(__file__).resolve().parents[1]
 
 
