@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import sqlite3
+from datetime import date
 
 import pytest
 
 from core.application.case_service import CaseService
+from core.application.deadline_engine import DeadlineEngine
 from core.application.identity_service import IdentityService
 from core.application.target_service import TargetService
 from core.domain.case import CaseStatus
+from core.domain.rights import CaseRight, RightsPolicy
 from core.storage.case_repository import CaseRepository
 from core.storage.database import Database
 from core.storage.identity_repository import IdentityRepository
@@ -22,7 +25,13 @@ def build_services(tmp_path):
     database.initialize()
     identity_service = IdentityService(IdentityRepository(database, SensitiveStore(TEST_KEY)))
     target_service = TargetService(TargetRepository(database))
-    case_service = CaseService(CaseRepository(database), identity_service, target_service)
+    case_service = CaseService(
+        CaseRepository(database),
+        identity_service,
+        target_service,
+        RightsPolicy(),
+        DeadlineEngine(),
+    )
     return database, target_service, case_service
 
 
@@ -50,20 +59,20 @@ def test_case_workflow_records_append_only_timeline(tmp_path):
     target = target_service.create_target("Example Corp", "example.com")
     assert target.id is not None
 
-    case = case_service.create_case(target.id)
+    case = case_service.create_case(target.id, CaseRight.ACCESS_PROVENANCE)
     assert case.id is not None
     assert case.status is CaseStatus.DRAFT
 
-    opened = case_service.transition_case(case.id, CaseStatus.OPEN)
+    submitted = case_service.submit_case(case.id, date(2026, 8, 25))
     completed = case_service.transition_case(case.id, CaseStatus.COMPLETED)
     timeline = case_service.list_timeline(case.id)
 
-    assert opened.status is CaseStatus.OPEN
+    assert submitted.status is CaseStatus.AWAITING_RESPONSE
     assert completed.status is CaseStatus.COMPLETED
-    assert [event.event_type for event in timeline] == ["CREATED", "STATUS_CHANGED", "STATUS_CHANGED"]
+    assert [event.event_type for event in timeline] == ["CREATED", "REQUEST_SUBMITTED", "STATUS_CHANGED"]
     assert [event.to_status for event in timeline] == [
         CaseStatus.DRAFT,
-        CaseStatus.OPEN,
+        CaseStatus.AWAITING_RESPONSE,
         CaseStatus.COMPLETED,
     ]
 
@@ -75,7 +84,7 @@ def test_invalid_case_transition_does_not_append_event(tmp_path):
     _database, target_service, case_service = build_services(tmp_path)
     target = target_service.create_target("Example Corp")
     assert target.id is not None
-    case = case_service.create_case(target.id)
+    case = case_service.create_case(target.id, CaseRight.ERASURE)
     assert case.id is not None
 
     with pytest.raises(ValueError, match="Invalid case transition"):
@@ -90,11 +99,11 @@ def test_cancelled_case_is_terminal(tmp_path):
     _database, target_service, case_service = build_services(tmp_path)
     target = target_service.create_target("Example Corp")
     assert target.id is not None
-    case = case_service.create_case(target.id)
+    case = case_service.create_case(target.id, CaseRight.DIRECT_MARKETING_OBJECTION)
     assert case.id is not None
 
     cancelled = case_service.transition_case(case.id, CaseStatus.CANCELLED)
     assert cancelled.status is CaseStatus.CANCELLED
 
     with pytest.raises(ValueError, match="Invalid case transition"):
-        case_service.transition_case(case.id, CaseStatus.OPEN)
+        case_service.submit_case(case.id, date(2026, 8, 25))
