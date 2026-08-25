@@ -13,12 +13,25 @@ from ui.bridge import Bridge
 
 
 class LocalOnlyPage(QWebEnginePage):
+    def __init__(self, allowed_root: Path, parent=None) -> None:
+        super().__init__(parent)
+        self._allowed_root = allowed_root.resolve()
+
     def acceptNavigationRequest(self, url: QUrl, navigation_type, is_main_frame: bool) -> bool:  # type: ignore[override]
-        if url.isLocalFile() or url.scheme() in {"qrc", "about"}:
+        if url.scheme() in {"qrc", "about"}:
             return True
+        if url.isLocalFile():
+            return self._is_allowed_local_file(url)
         if is_main_frame and url.scheme() in {"http", "https"}:
             QDesktopServices.openUrl(url)
         return False
+
+    def _is_allowed_local_file(self, url: QUrl) -> bool:
+        try:
+            candidate = Path(url.toLocalFile()).resolve()
+            return candidate.is_relative_to(self._allowed_root)
+        except (OSError, RuntimeError):
+            return False
 
 
 class MainWindow(QMainWindow):
@@ -28,8 +41,9 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(1100, 720)
         self.resize(width, height)
 
+        resolved_web_root = web_root.resolve()
         self._view = QWebEngineView(self)
-        self._page = LocalOnlyPage(self._view)
+        self._page = LocalOnlyPage(resolved_web_root, self._view)
         self._view.setPage(self._page)
         self.setCentralWidget(self._view)
 
@@ -41,5 +55,5 @@ class MainWindow(QMainWindow):
         self._channel.registerObject("backend", bridge)
         self._page.setWebChannel(self._channel)
 
-        index = (web_root / "index.html").resolve()
+        index = (resolved_web_root / "index.html").resolve()
         self._view.setUrl(QUrl.fromLocalFile(str(index)))
