@@ -81,31 +81,83 @@ def test_v1_database_is_migrated_without_losing_existing_rows(tmp_path):
 
 def test_v2_open_case_migrates_to_awaiting_response_without_data_loss(tmp_path):
     database_path = tmp_path / "v2.sqlite3"
+    connection = sqlite3.connect(database_path)
+    try:
+        connection.executescript(
+            """
+            PRAGMA foreign_keys = ON;
+            CREATE TABLE schema_meta (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                schema_version INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                last_migrated_at TEXT NOT NULL
+            );
+            CREATE TABLE identities (
+                id INTEGER PRIMARY KEY,
+                display_name_enc BLOB,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE TABLE identifiers (
+                id INTEGER PRIMARY KEY,
+                identity_id INTEGER NOT NULL REFERENCES identities(id) ON DELETE CASCADE,
+                kind TEXT NOT NULL,
+                value_enc BLOB NOT NULL,
+                label_enc BLOB,
+                active INTEGER NOT NULL CHECK (active IN (0, 1)),
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE TABLE targets (
+                id INTEGER PRIMARY KEY,
+                name TEXT NOT NULL,
+                domain TEXT UNIQUE,
+                privacy_email TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE TABLE cases (
+                id INTEGER PRIMARY KEY,
+                identity_id INTEGER NOT NULL REFERENCES identities(id) ON DELETE RESTRICT,
+                target_id INTEGER NOT NULL REFERENCES targets(id) ON DELETE RESTRICT,
+                status TEXT NOT NULL CHECK (status IN ('DRAFT', 'OPEN', 'COMPLETED', 'CANCELLED')),
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE TABLE case_events (
+                id INTEGER PRIMARY KEY,
+                case_id INTEGER NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+                event_type TEXT NOT NULL CHECK (event_type IN ('CREATED', 'STATUS_CHANGED')),
+                from_status TEXT,
+                to_status TEXT,
+                created_at TEXT NOT NULL
+            );
+            CREATE TRIGGER case_events_no_update BEFORE UPDATE ON case_events
+            BEGIN SELECT RAISE(ABORT, 'case events are append-only'); END;
+            CREATE TRIGGER case_events_no_delete BEFORE DELETE ON case_events
+            BEGIN SELECT RAISE(ABORT, 'case events are append-only'); END;
+            INSERT INTO schema_meta VALUES (1, 2, 'old', 'old');
+            INSERT INTO identities VALUES (1, NULL, 'old', 'old');
+            INSERT INTO targets VALUES (1, 'Example Corp', 'example.com', NULL, 'old', 'old');
+            INSERT INTO cases VALUES (1, 1, 1, 'OPEN', 'old', 'old');
+            INSERT INTO case_events VALUES (1, 1, 'STATUS_CHANGED', 'DRAFT', 'OPEN', 'old');
+            """
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
     database = Database(database_path)
-    database.CURRENT_SCHEMA_VERSION = 2
     database.initialize()
 
-    with database.transaction() as connection:
-        connection.execute("INSERT INTO identities VALUES (1, NULL, 'old', 'old')")
-        connection.execute(
-            "INSERT INTO targets VALUES (1, 'Example Corp', 'example.com', NULL, 'old', 'old')"
-        )
-        connection.execute(
-            "INSERT INTO cases VALUES (1, 1, 1, 'OPEN', 'old', 'old')"
-        )
-        connection.execute(
-            "INSERT INTO case_events VALUES (1, 1, 'STATUS_CHANGED', 'DRAFT', 'OPEN', 'old')"
-        )
-
-    Database(database_path).initialize()
-
-    with Database(database_path).connection_scope() as migrated:
+    with database.connection_scope() as migrated:
         case = migrated.execute(
             "SELECT right_type, status, received_on, extension_notified_on FROM cases WHERE id = 1"
         ).fetchone()
         event = migrated.execute(
             "SELECT from_status, to_status FROM case_events WHERE id = 1"
         ).fetchone()
+        assert migrated.execute("SELECT schema_version FROM schema_meta WHERE id = 1").fetchone()[0] == 3
         assert case is not None
         assert case["right_type"] == "UNSPECIFIED"
         assert case["status"] == "AWAITING_RESPONSE"
