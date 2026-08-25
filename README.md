@@ -13,9 +13,9 @@ M4 adds:
 - Evidence records with mandatory provenance;
 - Claim/Hypothesis records kept distinct from Evidence;
 - explicit support/contradiction links between Evidence and Claims;
-- a rule that model-originated claims start as hypotheses and cannot become verified from confidence alone;
-- a rule that a verified Claim requires supporting Evidence;
-- a local Investigation workbench for creating investigations, importing text artifacts, recording evidence, and adding hypotheses.
+- a rule that model-originated claims start as hypotheses and cannot be promoted by confidence alone;
+- evidence-backed promotion: `SUPPORTED` requires at least one supporting Evidence item, while `CORROBORATED` and `VERIFIED` require at least two;
+- a local Investigation workbench for creating investigations, importing text artifacts, recording user-observed evidence, and adding hypotheses.
 
 Supported GDPR Case workflows remain:
 
@@ -38,6 +38,7 @@ LLM inference, web research, automatic artifact analysis, exposure discovery, au
 - Sensitive personal/investigative data is encrypted before persistence
 - Raw Artifact bytes are stored encrypted outside SQLite behind `ArtifactStore`
 - `InvestigationService` is the sole application owner of Investigation/Evidence/Claim mutations
+- the QWebChannel bridge exposes semantic user actions; the frontend cannot assign authoritative/model/deterministic provenance
 - GDPR rights and deadline rules are deterministic Python modules; no LLM participates in legal workflow decisions
 
 ## Install
