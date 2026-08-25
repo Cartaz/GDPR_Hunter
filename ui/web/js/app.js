@@ -76,7 +76,6 @@ function renderInvestigations(investigations) {
     investigationListNode.appendChild(empty);
     return;
   }
-
   for (const investigation of investigations) {
     const row = document.createElement("div");
     row.className = "record";
@@ -89,6 +88,19 @@ function renderInvestigations(investigations) {
     row.append(info, makeButton("Inspect", () => loadInvestigation(investigation.id)));
     investigationListNode.appendChild(row);
   }
+}
+
+function analyzeArtifact(artifactId) {
+  if (!backend || !selectedInvestigationId) return;
+  backend.analyzeArtifact(selectedInvestigationId, artifactId, (response) => {
+    if (response?.ok) {
+      const count = response.result?.createdCount ?? 0;
+      setStatus(count ? `${count} deterministic evidence item(s) extracted.` : "Artifact already fully analyzed or no supported findings found.");
+      loadInvestigation(selectedInvestigationId);
+    } else if (response?.error?.message) {
+      setStatus(response.error.message, true);
+    }
+  });
 }
 
 function renderInvestigationDetail(detail) {
@@ -106,6 +118,19 @@ function renderInvestigationDetail(detail) {
   summaryStatus.textContent = `State: ${detail.investigation.status}`;
   summary.append(summaryTitle, summaryStatus);
   investigationDetailListNode.appendChild(summary);
+
+  for (const artifact of detail.artifacts) {
+    const row = document.createElement("div");
+    row.className = "record";
+    const info = document.createElement("div");
+    const title = document.createElement("strong");
+    title.textContent = `Artifact #${artifact.id} · ${artifact.kind}`;
+    const value = document.createElement("small");
+    value.textContent = `${artifact.mediaType} · ${artifact.byteSize} bytes`;
+    info.append(title, value);
+    row.append(info, makeButton("Analyze", () => analyzeArtifact(artifact.id)));
+    investigationDetailListNode.appendChild(row);
+  }
 
   for (const evidence of detail.evidence) {
     const row = document.createElement("div");
@@ -169,7 +194,6 @@ function renderTargets(targets) {
     targetListNode.appendChild(empty);
     return;
   }
-
   for (const target of targets) {
     const row = document.createElement("div");
     row.className = "record";
@@ -204,7 +228,6 @@ function renderCases(cases) {
     caseListNode.appendChild(empty);
     return;
   }
-
   for (const caseItem of cases) {
     const row = document.createElement("div");
     row.className = "record case-record";
@@ -214,17 +237,14 @@ function renderCases(cases) {
     const detail = document.createElement("small");
     detail.textContent = `Case #${caseItem.id} · ${caseItem.article ?? "Legacy"} · ${caseItem.rightTitle} · ${caseItem.status}`;
     info.append(title, detail);
-
     if (caseItem.effectiveDueOn) {
       const due = document.createElement("small");
       due.textContent = `Tracked deadline: ${caseItem.effectiveDueOn}${caseItem.extensionNotifiedOn ? " · extension recorded" : ""}`;
       info.appendChild(due);
     }
-
     const actions = document.createElement("div");
     actions.className = "record-actions";
     actions.appendChild(makeButton("Timeline", () => loadTimeline(caseItem.id)));
-
     if (caseItem.status === "DRAFT" && caseItem.right !== "UNSPECIFIED") {
       actions.appendChild(makeDateAction("Record submission", (value) => submitCase(caseItem.id, value)));
       actions.appendChild(makeButton("Cancel", () => transitionCase(caseItem.id, "CANCELLED")));
@@ -235,7 +255,6 @@ function renderCases(cases) {
       actions.appendChild(makeButton("Complete", () => transitionCase(caseItem.id, "COMPLETED")));
       actions.appendChild(makeButton("Cancel", () => transitionCase(caseItem.id, "CANCELLED")));
     }
-
     row.append(info, actions);
     caseListNode.appendChild(row);
   }
@@ -243,7 +262,7 @@ function renderCases(cases) {
 
 function renderState(state) {
   currentState = state;
-  milestoneNode.textContent = state.milestone ?? "M4";
+  milestoneNode.textContent = state.milestone ?? "M5";
   investigationCountNode.textContent = String(state.investigations?.length ?? 0);
   targetCountNode.textContent = String(state.targets?.length ?? 0);
   caseCountNode.textContent = String(state.cases?.length ?? 0);
@@ -323,7 +342,6 @@ function connectBackend() {
     setStatus("Native backend is unavailable.", true);
     return;
   }
-
   new QWebChannel(qt.webChannelTransport, (channel) => {
     backend = channel.objects.backend;
     backend.getBootstrapState((state) => renderState(state));
