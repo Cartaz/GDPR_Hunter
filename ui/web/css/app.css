@@ -1,0 +1,148 @@
+:root {
+  color-scheme: dark;
+  --surface: rgb(20, 20, 20);
+  --accent: rgb(255, 102, 0);
+  --text: rgb(225, 225, 225);
+  --muted: rgb(135, 135, 135);
+  --subtle: rgb(90, 90, 90);
+  --shadow-dark: rgba(0, 0, 0, 0.62);
+  --shadow-light: rgba(50, 50, 50, 0.38);
+  --radius-lg: 28px;
+  --radius-md: 22px;
+  --radius-sm: 16px;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-width: 900px;
+  min-height: 100vh;
+  background: var(--surface);
+  color: var(--text);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+button, input { font: inherit; }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+.app-shell {
+  display: grid;
+  grid-template-columns: 250px 1fr;
+  min-height: 100vh;
+}
+
+.sidebar {
+  padding: 34px 24px;
+  border-right: 1px solid rgb(34, 34, 34);
+}
+
+.brand {
+  margin: 0 10px 38px;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.brand span { color: var(--accent); }
+nav { display: grid; gap: 13px; }
+
+.nav-item {
+  width: 100%;
+  padding: 15px 18px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--muted);
+  text-align: left;
+  box-shadow: 7px 7px 16px var(--shadow-dark), -6px -6px 14px var(--shadow-light);
+}
+
+.nav-item.selected {
+  color: var(--accent);
+  border-color: rgba(255, 102, 0, .62);
+  box-shadow: inset 5px 5px 12px var(--shadow-dark), inset -4px -4px 10px var(--shadow-light), 0 0 18px rgba(255, 102, 0, .14);
+}
+
+.nav-item:disabled { opacity: .45; cursor: not-allowed; }
+
+main { padding: 42px clamp(34px, 4vw, 72px); }
+.topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 34px; }
+h1, h2, p { margin-top: 0; }
+h1 { margin-bottom: 0; font-size: clamp(34px, 4vw, 50px); }
+h2 { margin-bottom: 10px; font-size: 23px; }
+
+.eyebrow {
+  margin-bottom: 8px;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .16em;
+}
+
+.badge {
+  padding: 11px 16px;
+  border-radius: 999px;
+  color: var(--accent);
+  box-shadow: inset 4px 4px 9px var(--shadow-dark), inset -4px -4px 9px var(--shadow-light);
+}
+
+.metric-grid, .content-grid { display: grid; gap: 24px; }
+.metric-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-bottom: 24px; }
+.content-grid { grid-template-columns: minmax(0, 1.25fr) minmax(0, .85fr); }
+
+.card {
+  padding: 27px;
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: 12px 12px 28px var(--shadow-dark), -10px -10px 24px var(--shadow-light);
+}
+
+.metric { min-height: 150px; display: flex; flex-direction: column; justify-content: space-between; }
+.metric-label, .muted, small { color: var(--muted); }
+.metric strong { font-size: 32px; }
+.metric strong.pending { font-size: 24px; color: var(--muted); }
+
+.form-row { margin-top: 28px; }
+.form-row label { display: block; margin-bottom: 10px; color: var(--muted); font-size: 13px; }
+.inline-control { display: grid; grid-template-columns: 1fr auto; gap: 14px; }
+
+input {
+  min-width: 0;
+  padding: 14px 16px;
+  border: 1px solid rgb(38, 38, 38);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: inset 5px 5px 12px var(--shadow-dark), inset -4px -4px 10px var(--shadow-light);
+}
+
+button[type="submit"] {
+  padding: 0 22px;
+  border: 1px solid rgba(255, 102, 0, .55);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--accent);
+  box-shadow: 6px 6px 14px var(--shadow-dark), -5px -5px 12px var(--shadow-light);
+  cursor: pointer;
+}
+
+button[type="submit"]:active {
+  box-shadow: inset 4px 4px 9px var(--shadow-dark), inset -4px -4px 9px var(--shadow-light);
+}
+
+.status-list { margin: 26px 0 0; padding: 0; list-style: none; }
+.status-list li { display: flex; justify-content: space-between; gap: 20px; padding: 13px 0; border-bottom: 1px solid rgb(38, 38, 38); }
+.status-list li:last-child { border-bottom: 0; }
+.status-list span { color: var(--muted); }
+.status-list b { color: var(--text); font-size: 13px; }
+.pending-text { color: var(--muted) !important; }
+.status { min-height: 24px; margin: 24px 4px 0; color: var(--muted); }
+.status.error { color: rgb(225, 135, 90); }
+
+@media (max-width: 1050px) {
+  .app-shell { grid-template-columns: 210px 1fr; }
+  .metric-grid { grid-template-columns: 1fr; }
+  .content-grid { grid-template-columns: 1fr; }
+}
