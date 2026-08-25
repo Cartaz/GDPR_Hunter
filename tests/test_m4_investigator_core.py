@@ -97,7 +97,7 @@ def test_model_claim_starts_as_hypothesis_and_confidence_cannot_verify_it(tmp_pa
         service.transition_claim(claim.id, ClaimStatus.VERIFIED)
 
 
-def test_verified_claim_requires_supporting_evidence(tmp_path):
+def test_claim_promotion_requires_increasing_supporting_evidence(tmp_path):
     _database, _repository, service = build_service(tmp_path)
     investigation = service.create_investigation("Evidence requirement")
     assert investigation.id is not None
@@ -109,12 +109,10 @@ def test_verified_claim_requires_supporting_evidence(tmp_path):
     )
     assert claim.id is not None
 
-    supported = service.transition_claim(claim.id, ClaimStatus.SUPPORTED)
-    corroborated = service.transition_claim(supported.id, ClaimStatus.CORROBORATED)
-    with pytest.raises(ValueError, match="supporting evidence"):
-        service.transition_claim(corroborated.id, ClaimStatus.VERIFIED)
+    with pytest.raises(ValueError, match="Supported claims require"):
+        service.transition_claim(claim.id, ClaimStatus.SUPPORTED)
 
-    evidence = service.add_evidence(
+    first = service.add_evidence(
         investigation.id,
         None,
         EvidenceKind.SOURCE_STATEMENT,
@@ -122,10 +120,27 @@ def test_verified_claim_requires_supporting_evidence(tmp_path):
         "We obtained your number from Broker X",
         "response.body",
     )
-    assert evidence.id is not None
-    service.attach_evidence(claim.id, evidence.id, EvidenceRelation.SUPPORTS)
+    assert first.id is not None
+    service.attach_evidence(claim.id, first.id, EvidenceRelation.SUPPORTS)
+    supported = service.transition_claim(claim.id, ClaimStatus.SUPPORTED)
+    assert supported.status is ClaimStatus.SUPPORTED
 
-    verified = service.transition_claim(claim.id, ClaimStatus.VERIFIED)
+    with pytest.raises(ValueError, match="at least two"):
+        service.transition_claim(claim.id, ClaimStatus.CORROBORATED)
+
+    second = service.add_evidence(
+        investigation.id,
+        None,
+        EvidenceKind.OBSERVATION,
+        EvidenceProvenance.AUTHORITATIVE_SOURCE,
+        "Broker X is identified as the campaign lead provider",
+        "authoritative.registry.entry",
+    )
+    assert second.id is not None
+    service.attach_evidence(claim.id, second.id, EvidenceRelation.SUPPORTS)
+
+    corroborated = service.transition_claim(claim.id, ClaimStatus.CORROBORATED)
+    verified = service.transition_claim(corroborated.id, ClaimStatus.VERIFIED)
     assert verified.status is ClaimStatus.VERIFIED
 
 
