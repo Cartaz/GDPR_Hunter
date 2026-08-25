@@ -22,12 +22,11 @@ def test_orphan_identifier_is_rejected(tmp_path):
     database = Database(tmp_path / "test.sqlite3")
     database.initialize()
 
-    with pytest.raises(sqlite3.IntegrityError):
-        with database.transaction() as connection:
-            connection.execute(
-                """
-                INSERT INTO identifiers(identity_id, kind, value_enc, label_enc, active, created_at, updated_at)
-                VALUES (999, 'EMAIL', ?, NULL, 1, 'now', 'now')
-                """,
-                (b"encrypted",),
-            )
+    with pytest.raises(sqlite3.IntegrityError), database.transaction() as connection:
+        connection.execute(
+            """
+            INSERT INTO identifiers(identity_id, kind, value_enc, label_enc, active, created_at, updated_at)
+            VALUES (999, 'EMAIL', ?, NULL, 1, 'now', 'now')
+            """,
+            (b"encrypted",),
+        )
