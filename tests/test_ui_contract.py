@@ -30,6 +30,19 @@ def test_frontend_does_not_render_backend_data_with_inner_html():
     assert "innerHTML" not in javascript
 
 
+def test_frontend_cannot_assign_privileged_investigation_provenance():
+    javascript = (ROOT / "ui" / "web" / "js" / "app.js").read_text(encoding="utf-8")
+    bridge = (ROOT / "ui" / "bridge.py").read_text(encoding="utf-8")
+
+    assert "DETERMINISTIC_ANALYSIS" not in javascript
+    assert "AUTHORITATIVE_SOURCE" not in javascript
+    assert "MODEL_INFERENCE" not in javascript
+    assert "addUserEvidence" in bridge
+    assert "createUserClaim" in bridge
+    assert "def addEvidence" not in bridge
+    assert "def createClaim" not in bridge
+
+
 def test_local_navigation_is_confined_to_web_root(tmp_path):
     web_root = tmp_path / "ui" / "web"
     web_root.mkdir(parents=True)
