@@ -1,0 +1,3 @@
+PySide6>=6.9,<6.12
+cryptography>=45,<47
+keyring>=25,<27
