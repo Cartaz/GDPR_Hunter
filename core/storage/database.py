@@ -15,7 +15,7 @@ class UnsupportedSchemaVersion(DatabaseSchemaError):
 
 
 class Database:
-    """Own SQLite connection setup, schema compatibility, migrations, and transactions."""
+    """Own SQLite connection setup, lifecycle, schema compatibility, migrations, and transactions."""
 
     CURRENT_SCHEMA_VERSION = 2
 
@@ -28,7 +28,7 @@ class Database:
 
     def initialize(self) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        with self.connect() as connection:
+        with self.connection_scope() as connection:
             existing_version = self._existing_schema_version(connection)
             if existing_version is None:
                 self._create_current_schema(connection)
@@ -56,13 +56,17 @@ class Database:
         return connection
 
     @contextmanager
-    def transaction(self) -> Iterator[sqlite3.Connection]:
+    def connection_scope(self) -> Iterator[sqlite3.Connection]:
         connection = self.connect()
         try:
-            with connection:
-                yield connection
+            yield connection
         finally:
             connection.close()
+
+    @contextmanager
+    def transaction(self) -> Iterator[sqlite3.Connection]:
+        with self.connection_scope() as connection, connection:
+            yield connection
 
     def _create_current_schema(self, connection: sqlite3.Connection) -> None:
         with connection:
