@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import ClassVar
 
 
 class CaseRight(StrEnum):
@@ -24,7 +25,7 @@ class RightPolicy:
 class RightsPolicy:
     """Deterministic policy for the GDPR rights supported by the application."""
 
-    _POLICIES: dict[CaseRight, RightPolicy] = {
+    _POLICIES: ClassVar[dict[CaseRight, RightPolicy]] = {
         CaseRight.ACCESS_PROVENANCE: RightPolicy(
             right=CaseRight.ACCESS_PROVENANCE,
             article="Article 15",
