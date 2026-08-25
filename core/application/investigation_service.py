@@ -154,8 +154,13 @@ class InvestigationService:
         if claim is None:
             raise LookupError("Claim does not exist")
         validate_claim_transition(claim.status, target)
-        if target is ClaimStatus.VERIFIED and self._repository.supporting_evidence_count(claim_id) < 1:
-            raise ValueError("Verified claims require supporting evidence")
+
+        supporting_count = self._repository.supporting_evidence_count(claim_id)
+        if target is ClaimStatus.SUPPORTED and supporting_count < 1:
+            raise ValueError("Supported claims require supporting evidence")
+        if target in {ClaimStatus.CORROBORATED, ClaimStatus.VERIFIED} and supporting_count < 2:
+            raise ValueError("Corroborated or verified claims require at least two supporting evidence items")
+
         return self._repository.update_claim_status(claim_id, claim.status, target)
 
     def _require_investigation(self, investigation_id: int) -> Investigation:
