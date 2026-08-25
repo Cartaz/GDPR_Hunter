@@ -15,9 +15,9 @@ class UnsupportedSchemaVersion(DatabaseSchemaError):
 
 
 class Database:
-    """Own SQLite connection setup, schema compatibility, and transactions."""
+    """Own SQLite connection setup, schema compatibility, migrations, and transactions."""
 
-    CURRENT_SCHEMA_VERSION = 1
+    CURRENT_SCHEMA_VERSION = 2
 
     def __init__(self, path: Path) -> None:
         self._path = path
@@ -30,49 +30,20 @@ class Database:
         self._path.parent.mkdir(parents=True, exist_ok=True)
         with self.connect() as connection:
             existing_version = self._existing_schema_version(connection)
-            if existing_version is not None and existing_version != self.CURRENT_SCHEMA_VERSION:
+            if existing_version is None:
+                self._create_current_schema(connection)
+                return
+            if existing_version > self.CURRENT_SCHEMA_VERSION:
                 raise UnsupportedSchemaVersion(
-                    f"Database schema version {existing_version} is not supported by this application version"
+                    f"Database schema version {existing_version} is newer than supported version "
+                    f"{self.CURRENT_SCHEMA_VERSION}"
                 )
+            if existing_version < 1:
+                raise UnsupportedSchemaVersion(f"Database schema version {existing_version} is not supported")
 
-            connection.executescript(
-                """
-                CREATE TABLE IF NOT EXISTS schema_meta (
-                    id INTEGER PRIMARY KEY CHECK (id = 1),
-                    schema_version INTEGER NOT NULL,
-                    created_at TEXT NOT NULL,
-                    last_migrated_at TEXT NOT NULL
-                );
-
-                CREATE TABLE IF NOT EXISTS identities (
-                    id INTEGER PRIMARY KEY,
-                    display_name_enc BLOB,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
-                );
-
-                CREATE TABLE IF NOT EXISTS identifiers (
-                    id INTEGER PRIMARY KEY,
-                    identity_id INTEGER NOT NULL REFERENCES identities(id) ON DELETE CASCADE,
-                    kind TEXT NOT NULL,
-                    value_enc BLOB NOT NULL,
-                    label_enc BLOB,
-                    active INTEGER NOT NULL CHECK (active IN (0, 1)),
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
-                );
-
-                CREATE INDEX IF NOT EXISTS idx_identifiers_identity_id
-                    ON identifiers(identity_id);
-                """
-            )
-            connection.execute(
-                """
-                INSERT OR IGNORE INTO schema_meta(id, schema_version, created_at, last_migrated_at)
-                VALUES (1, ?, datetime('now'), datetime('now'))
-                """,
-                (self.CURRENT_SCHEMA_VERSION,),
-            )
+            version = existing_version
+            while version < self.CURRENT_SCHEMA_VERSION:
+                version = self._migrate(connection, version)
 
     def connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self._path)
@@ -93,6 +64,112 @@ class Database:
         finally:
             connection.close()
 
+    def _create_current_schema(self, connection: sqlite3.Connection) -> None:
+        with connection:
+            connection.executescript(
+                """
+                CREATE TABLE schema_meta (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    schema_version INTEGER NOT NULL,
+                    created_at TEXT NOT NULL,
+                    last_migrated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE identities (
+                    id INTEGER PRIMARY KEY,
+                    display_name_enc BLOB,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE identifiers (
+                    id INTEGER PRIMARY KEY,
+                    identity_id INTEGER NOT NULL REFERENCES identities(id) ON DELETE CASCADE,
+                    kind TEXT NOT NULL,
+                    value_enc BLOB NOT NULL,
+                    label_enc BLOB,
+                    active INTEGER NOT NULL CHECK (active IN (0, 1)),
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE INDEX idx_identifiers_identity_id ON identifiers(identity_id);
+                """
+            )
+            self._create_m2_schema(connection)
+            connection.execute(
+                """
+                INSERT INTO schema_meta(id, schema_version, created_at, last_migrated_at)
+                VALUES (1, ?, datetime('now'), datetime('now'))
+                """,
+                (self.CURRENT_SCHEMA_VERSION,),
+            )
+
+    def _migrate(self, connection: sqlite3.Connection, from_version: int) -> int:
+        if from_version == 1:
+            with connection:
+                self._create_m2_schema(connection)
+                connection.execute(
+                    """
+                    UPDATE schema_meta
+                    SET schema_version = 2, last_migrated_at = datetime('now')
+                    WHERE id = 1 AND schema_version = 1
+                    """
+                )
+            return 2
+        raise UnsupportedSchemaVersion(f"No migration path from database schema version {from_version}")
+
+    @staticmethod
+    def _create_m2_schema(connection: sqlite3.Connection) -> None:
+        connection.executescript(
+            """
+            CREATE TABLE targets (
+                id INTEGER PRIMARY KEY,
+                name TEXT NOT NULL,
+                domain TEXT UNIQUE,
+                privacy_email TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE cases (
+                id INTEGER PRIMARY KEY,
+                identity_id INTEGER NOT NULL REFERENCES identities(id) ON DELETE RESTRICT,
+                target_id INTEGER NOT NULL REFERENCES targets(id) ON DELETE RESTRICT,
+                status TEXT NOT NULL CHECK (status IN ('DRAFT', 'OPEN', 'COMPLETED', 'CANCELLED')),
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE INDEX idx_cases_identity_id ON cases(identity_id);
+            CREATE INDEX idx_cases_target_id ON cases(target_id);
+            CREATE INDEX idx_cases_status ON cases(status);
+
+            CREATE TABLE case_events (
+                id INTEGER PRIMARY KEY,
+                case_id INTEGER NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+                event_type TEXT NOT NULL CHECK (event_type IN ('CREATED', 'STATUS_CHANGED')),
+                from_status TEXT CHECK (from_status IS NULL OR from_status IN ('DRAFT', 'OPEN', 'COMPLETED', 'CANCELLED')),
+                to_status TEXT CHECK (to_status IS NULL OR to_status IN ('DRAFT', 'OPEN', 'COMPLETED', 'CANCELLED')),
+                created_at TEXT NOT NULL
+            );
+
+            CREATE INDEX idx_case_events_case_id ON case_events(case_id, id);
+
+            CREATE TRIGGER case_events_no_update
+            BEFORE UPDATE ON case_events
+            BEGIN
+                SELECT RAISE(ABORT, 'case events are append-only');
+            END;
+
+            CREATE TRIGGER case_events_no_delete
+            BEFORE DELETE ON case_events
+            BEGIN
+                SELECT RAISE(ABORT, 'case events are append-only');
+            END;
+            """
+        )
+
     @staticmethod
     def _existing_schema_version(connection: sqlite3.Connection) -> int | None:
         table_exists = connection.execute(
@@ -102,9 +179,7 @@ class Database:
             return None
 
         try:
-            row = connection.execute(
-                "SELECT schema_version FROM schema_meta WHERE id = 1"
-            ).fetchone()
+            row = connection.execute("SELECT schema_version FROM schema_meta WHERE id = 1").fetchone()
         except sqlite3.Error as exc:
             raise DatabaseSchemaError("Database schema metadata is malformed") from exc
 
