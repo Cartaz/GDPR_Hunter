@@ -35,6 +35,7 @@ let backend = null;
 let currentState = null;
 let selectedInvestigationId = null;
 let selectedInvestigationDetail = null;
+let activeResearchArtifactId = null;
 
 function setStatus(message, isError = false) {
   statusNode.textContent = message;
@@ -103,6 +104,18 @@ function analyzeArtifact(artifactId) {
   });
 }
 
+function researchArtifactUrls(artifactId) {
+  if (!backend || !selectedInvestigationId || activeResearchArtifactId !== null) return;
+  const approved = window.confirm(
+    "Fetch the public URLs deterministically extracted from this artifact? Network access will be restricted by the research policy.",
+  );
+  if (!approved) return;
+  backend.researchArtifactUrls(selectedInvestigationId, artifactId, (response) => {
+    if (response?.ok) setStatus("Public research started in the background.");
+    else if (response?.error?.message) setStatus(response.error.message, true);
+  });
+}
+
 function renderInvestigationDetail(detail) {
   selectedInvestigationDetail = detail;
   investigationDetailEmptyNode.hidden = true;
@@ -128,7 +141,13 @@ function renderInvestigationDetail(detail) {
     const value = document.createElement("small");
     value.textContent = `${artifact.mediaType} · ${artifact.byteSize} bytes`;
     info.append(title, value);
-    row.append(info, makeButton("Analyze", () => analyzeArtifact(artifact.id)));
+    const actions = document.createElement("div");
+    actions.className = "record-actions";
+    actions.appendChild(makeButton("Analyze", () => analyzeArtifact(artifact.id)));
+    const researchButton = makeButton("Research URLs", () => researchArtifactUrls(artifact.id));
+    researchButton.disabled = activeResearchArtifactId !== null;
+    actions.appendChild(researchButton);
+    row.append(info, actions);
     investigationDetailListNode.appendChild(row);
   }
 
@@ -262,7 +281,7 @@ function renderCases(cases) {
 
 function renderState(state) {
   currentState = state;
-  milestoneNode.textContent = state.milestone ?? "M6";
+  milestoneNode.textContent = state.milestone ?? "M7";
   investigationCountNode.textContent = String(state.investigations?.length ?? 0);
   targetCountNode.textContent = String(state.targets?.length ?? 0);
   caseCountNode.textContent = String(state.cases?.length ?? 0);
@@ -347,6 +366,22 @@ function connectBackend() {
     backend.getBootstrapState((state) => renderState(state));
     backend.stateChanged.connect((state) => renderState(state));
     backend.operationFailed.connect((_code, message) => setStatus(message, true));
+    backend.researchStarted.connect((_investigationId, artifactId) => {
+      activeResearchArtifactId = artifactId;
+      setStatus(`Researching public URLs from artifact #${artifactId}…`);
+      if (selectedInvestigationId) loadInvestigation(selectedInvestigationId);
+    });
+    backend.researchCompleted.connect((investigationId, artifactId, result) => {
+      activeResearchArtifactId = null;
+      const count = result?.createdCount ?? 0;
+      setStatus(count ? `${count} research evidence item(s) recorded.` : "Research completed with no new evidence.");
+      if (selectedInvestigationId === investigationId) loadInvestigation(investigationId);
+    });
+    backend.researchFailed.connect((investigationId, _artifactId, _code, message) => {
+      activeResearchArtifactId = null;
+      setStatus(message, true);
+      if (selectedInvestigationId === investigationId) loadInvestigation(investigationId);
+    });
   });
 }
 
