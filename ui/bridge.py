@@ -83,14 +83,21 @@ class Bridge(QObject):
     def analyzeArtifact(self, investigation_id: int, artifact_id: int) -> dict[str, object]:
         return self._mutate(lambda: self._controller.analyze_artifact(investigation_id, artifact_id))
 
-    @Slot(int, int, result="QVariant")
-    def researchArtifactUrls(self, investigation_id: int, artifact_id: int) -> dict[str, object]:
+    @Slot(int, int, bool, result="QVariant")
+    def researchArtifactUrls(
+        self,
+        investigation_id: int,
+        artifact_id: int,
+        approved_by_user: bool,
+    ) -> dict[str, object]:
         if investigation_id <= 0 or artifact_id <= 0:
             return self._fail("INVALID_INPUT", "Investigation and artifact ids must be positive")
+        if not approved_by_user:
+            return self._fail("APPROVAL_REQUIRED", "Outbound research requires explicit user approval")
         if not self._research_runner.start(
             investigation_id,
             artifact_id,
-            approved_by_user=True,
+            approved_by_user=approved_by_user,
         ):
             return self._fail("BUSY", "Another research operation is already running")
         return {"ok": True}
