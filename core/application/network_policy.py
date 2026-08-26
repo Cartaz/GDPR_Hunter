@@ -27,8 +27,8 @@ Resolver = Callable[[str, int, int, int], list[tuple]]
 class NetworkPolicy:
     """Validate outbound research destinations and resolve only public addresses."""
 
-    ALLOWED_SCHEMES = {"http", "https"}
-    ALLOWED_PORTS = {80, 443}
+    ALLOWED_SCHEMES = frozenset({"http", "https"})
+    ALLOWED_PORTS = frozenset({80, 443})
 
     def __init__(self, resolver: Resolver | None = None) -> None:
         self._resolver = resolver or socket.getaddrinfo
