@@ -4,34 +4,31 @@ GDPR Hunter is a local-first desktop privacy application under active developmen
 
 ## Current status
 
-Milestone **M5 — Deterministic Artifact Analysis** is implemented. The current codebase provides the desktop foundation, encrypted identity/artifact storage, Target Registry, GDPR Case workflow, deterministic rights/deadline logic, an evidence-backed Investigation workflow, and local deterministic extraction from supported Artifact types.
+Milestone **M6 — Research Foundation** is implemented. The current codebase provides the desktop foundation, encrypted identity/artifact storage, Target Registry, GDPR Case workflow, deterministic rights/deadline logic, evidence-backed Investigations, deterministic Artifact analysis, and a first guarded public-network research layer.
 
-M5 adds a bounded `ArtifactAnalyzer` that reads only encrypted Artifact bytes already owned by the application and produces `DETERMINISTIC_ANALYSIS` Evidence without network access or LLM inference. Current extraction covers:
+M6 adds:
 
-- SMS/text/company-response artifacts: HTTP(S) URLs, URL hosts, and plausible telephone numbers;
-- email artifacts: `From`, `Reply-To`, `Return-Path`, sender-related domains, `Message-ID` domain, DKIM `d=` domain, and HTTP(S) URLs/hosts from plain-text body parts;
-- URL artifacts: validated HTTP(S) URL and hostname extraction.
+- `NetworkPolicy` validation for outbound public HTTP(S) research;
+- rejection of localhost, private, link-local, reserved and otherwise non-public resolved IP addresses;
+- rejection of embedded URL credentials, non-HTTP(S) schemes and non-standard ports;
+- DNS resolution before connection and transport pinning to the validated IP while retaining the original hostname/SNI for HTTPS;
+- manual redirect handling with full policy revalidation on every hop and a bounded redirect count;
+- bounded response size, short timeout, restricted textual/JSON content types, and no automatic retries or browser execution;
+- `ResearchService` helpers for public document fetch, public DNS resolution and IANA-bootstrap-based domain RDAP lookup;
+- explicit `EgressPolicy` approval before research-capable operations;
+- encrypted storage of fetched public documents as reference Artifacts and `REMOTE_DOCUMENT` Evidence;
+- deterministic analysis of fetched reference documents after they are stored locally;
+- an explicit user-triggered `Research URLs` action in the Investigation workbench. The bridge does not expose a generic `fetchUrl` capability.
 
-Analysis is idempotent against the canonical Evidence already stored for an Artifact: re-running the same deterministic parser adds only missing findings. Invalid or non-HTTP(S) URL artifacts do not become network operations or Evidence merely because they are strings.
+Research is currently restricted to HTTP(S) URLs that were first extracted as deterministic Evidence from an Artifact. The user must explicitly trigger the research action. LLM inference cannot request or execute network access because LLM inference is not implemented yet.
 
-The Investigation model continues to enforce:
+The M5 `ArtifactAnalyzer` continues to cover SMS/text/company-response URLs, hosts and plausible telephone numbers; email sender-related headers/domains, Message-ID domain, DKIM `d=` domain and plain-text-body URLs; and URL artifacts. Parsing itself has no network authority.
 
-- encrypted raw Artifact storage with immutable metadata;
-- Evidence records with mandatory provenance;
-- Claim/Hypothesis records kept distinct from Evidence;
-- explicit support/contradiction links between Evidence and Claims;
-- model-originated claims start as hypotheses and cannot be promoted by confidence alone;
-- `SUPPORTED` requires at least one supporting Evidence item, while `CORROBORATED` and `VERIFIED` require at least two.
+The Investigation model continues to enforce encrypted Artifact storage, mandatory Evidence provenance, separation of Evidence from Claim/Hypothesis, evidence-backed Claim promotion and Python-only canonical mutations.
 
-Supported GDPR Case workflows remain:
+Supported GDPR Case workflows remain Article 15 access/provenance, Article 17 erasure and Article 21(2)-(3) direct-marketing objection. Deadline calculations use calendar months and support injected public holidays; automatic jurisdiction-specific holiday resolution is still planned.
 
-- Article 15 access and provenance, including available source information when data were not collected from the data subject;
-- Article 17 erasure, with the application explicitly preserving the need for a case-specific ground and possible statutory exceptions;
-- Article 21(2)-(3) objection to processing for direct marketing.
-
-Cases record the date the controller received a request. Deadline calculations use calendar months rather than fixed 30-day intervals, roll weekend deadlines to the following working day, and support an injected public-holiday set. The current production workflow does not yet know the relevant jurisdiction-specific holiday calendar, so the UI explicitly flags that public-holiday review remains required.
-
-LLM inference, web research, redirect resolution, exposure discovery, automated delivery, monitoring, and escalation are planned but are **not implemented yet**.
+LLM inference, autonomous research planning, browser automation, exposure discovery, automated request delivery, monitoring and escalation are **not implemented yet**.
 
 ## Architecture
 
@@ -42,11 +39,13 @@ LLM inference, web research, redirect resolution, exposure discovery, automated 
 - SQLite for operational persistence
 - Python owns canonical state and business logic
 - Sensitive personal/investigative data is encrypted before persistence
-- Raw Artifact bytes are stored encrypted outside SQLite behind `ArtifactStore`
+- Raw and fetched Artifact bytes are stored encrypted outside SQLite behind `ArtifactStore`
 - `InvestigationService` is the sole application owner of Investigation/Evidence/Claim mutations
-- `ArtifactAnalyzer` is a pure deterministic parser and has no network, filesystem, browser, or inference authority
-- the QWebChannel bridge exposes semantic user actions; the frontend cannot assign authoritative/model/deterministic provenance
-- GDPR rights and deadline rules are deterministic Python modules; no LLM participates in legal workflow decisions
+- `ArtifactAnalyzer` is deterministic and has no network authority
+- `ResearchService` owns bounded network mechanics behind `NetworkPolicy`
+- outbound research requires explicit `EgressPolicy` authorization
+- the bridge exposes semantic user actions rather than arbitrary network/filesystem primitives
+- GDPR rights and deadline rules remain deterministic Python modules
 
 ## Install
 
@@ -71,4 +70,4 @@ chmod +x install.sh
 
 ## Security posture
 
-The application is designed around local-first processing, explicit outbound-data control, local-only WebEngine content, redacted diagnostics, encrypted sensitive persistence, append-only Case timelines, immutable Artifact metadata, evidence provenance, deterministic parsing without network authority, and strict separation between future LLM inference and canonical application state.
+The application is designed around local-first processing, explicit outbound-data control, local-only WebEngine content, redacted diagnostics, encrypted sensitive persistence, append-only Case timelines, immutable Artifact metadata, evidence provenance, deterministic parsing without network authority, SSRF-resistant bounded research, and strict separation between future LLM inference and canonical application state.
