@@ -110,7 +110,7 @@ function researchArtifactUrls(artifactId) {
     "Fetch the public URLs deterministically extracted from this artifact? Network access will be restricted by the research policy.",
   );
   if (!approved) return;
-  backend.researchArtifactUrls(selectedInvestigationId, artifactId, (response) => {
+  backend.researchArtifactUrls(selectedInvestigationId, artifactId, approved, (response) => {
     if (response?.ok) setStatus("Public research started in the background.");
     else if (response?.error?.message) setStatus(response.error.message, true);
   });
