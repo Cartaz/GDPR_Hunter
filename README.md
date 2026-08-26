@@ -25,7 +25,7 @@ M7 integrates that existing use case with the desktop application without moving
 - `ResearchRunner` owns a dedicated Qt worker thread for one bounded research operation at a time;
 - the worker invokes the normal Python `AppController` use case, so `InvestigationService`, `ResearchService`, `NetworkPolicy`, and `EgressPolicy` remain the single implementation of research rules;
 - QWebChannel exposes only the semantic `researchArtifactUrls` action, never arbitrary URL fetch or socket primitives;
-- the local UI requires an explicit confirmation before starting outbound research;
+- the local UI requires an explicit confirmation before starting outbound research, and that approval value is passed through and validated by the Python bridge before the worker starts;
 - start, completion, and failure return through Qt signals while the GUI thread remains responsive;
 - application shutdown waits for the owned research worker within a bounded window instead of abandoning an unowned thread;
 - concurrent research starts are rejected while one operation is active.
