@@ -9,7 +9,11 @@ from core.application.egress_policy import EgressPolicy
 from core.application.identity_service import IdentityService
 from core.application.investigation_service import InvestigationService
 from core.application.network_policy import NetworkPolicy, NetworkPolicyError
-from core.application.research_service import ResearchError, ResearchService, TransportResponse
+from core.application.research_service import (
+    ResearchError,
+    ResearchService,
+    TransportResponse,
+)
 from core.domain.investigation import ArtifactKind, ArtifactRole, EvidenceProvenance
 from core.storage.artifact_store import ArtifactStore
 from core.storage.database import Database
