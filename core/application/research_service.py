@@ -86,6 +86,8 @@ class ResearchService:
                 raise ResearchError(str(exc)) from exc
 
             response = self._transport(validated, self.TIMEOUT_SECONDS, self.MAX_DOCUMENT_BYTES)
+            if len(response.body) > self.MAX_DOCUMENT_BYTES:
+                raise ResearchError("Research response exceeds size limit")
             if response.status in self.REDIRECT_STATUSES:
                 location = response.headers.get("location")
                 if not location:
@@ -181,10 +183,9 @@ class ResearchService:
                 else:
                     active_socket = raw_socket
 
-                host_header = validated.hostname
                 request = (
                     f"GET {validated.request_target} HTTP/1.1\r\n"
-                    f"Host: {host_header}\r\n"
+                    f"Host: {validated.hostname}\r\n"
                     "User-Agent: GDPR-Hunter/0.1\r\n"
                     "Accept: text/html,text/plain,application/json,application/rdap+json;q=0.9,*/*;q=0.1\r\n"
                     "Connection: close\r\n\r\n"
