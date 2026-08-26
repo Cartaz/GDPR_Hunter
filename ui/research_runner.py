@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import sqlite3
 
 from PySide6.QtCore import QObject, QThread, Signal, Slot
 
@@ -42,7 +43,7 @@ class _ResearchWorker(QObject):
                 "INVALID_INPUT",
                 str(exc),
             )
-        except RuntimeError as exc:
+        except (RuntimeError, PermissionError) as exc:
             _LOG.warning("Research operation failed")
             self.failed.emit(
                 self._investigation_id,
@@ -50,8 +51,8 @@ class _ResearchWorker(QObject):
                 "RESEARCH_FAILED",
                 str(exc),
             )
-        except Exception:
-            _LOG.exception("Unexpected asynchronous research failure")
+        except (OSError, sqlite3.Error):
+            _LOG.exception("Research persistence or I/O operation failed")
             self.failed.emit(
                 self._investigation_id,
                 self._artifact_id,
