@@ -175,24 +175,37 @@ class InvestigationService:
                 document.content_type,
                 document.body,
             )
-            fetched = self.add_evidence(
-                investigation_id,
-                reference.id,
-                EvidenceKind.OBSERVATION,
-                EvidenceProvenance.REMOTE_DOCUMENT,
-                source_url,
-                marker,
+            created.append(
+                self.add_evidence(
+                    investigation_id,
+                    reference.id,
+                    EvidenceKind.OBSERVATION,
+                    EvidenceProvenance.REMOTE_DOCUMENT,
+                    source_url,
+                    marker,
+                )
             )
-            created.append(fetched)
-            final = self.add_evidence(
-                investigation_id,
-                reference.id,
-                EvidenceKind.OBSERVATION,
-                EvidenceProvenance.REMOTE_DOCUMENT,
-                document.final_url,
-                "research.final_url",
+            for index, hop in enumerate(document.redirects):
+                created.append(
+                    self.add_evidence(
+                        investigation_id,
+                        reference.id,
+                        EvidenceKind.OBSERVATION,
+                        EvidenceProvenance.REMOTE_DOCUMENT,
+                        f"{hop.status} {hop.source_url} -> {hop.destination_url}",
+                        f"research.redirect[{index}]",
+                    )
+                )
+            created.append(
+                self.add_evidence(
+                    investigation_id,
+                    reference.id,
+                    EvidenceKind.OBSERVATION,
+                    EvidenceProvenance.REMOTE_DOCUMENT,
+                    document.final_url,
+                    "research.final_url",
+                )
             )
-            created.append(final)
             if reference.id is not None:
                 created.extend(self.analyze_artifact(investigation_id, reference.id))
             existing.add((EvidenceProvenance.REMOTE_DOCUMENT, source_url, marker))
