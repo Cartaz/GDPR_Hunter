@@ -12,9 +12,12 @@ from core.application.app_controller import AppController
 from core.application.artifact_analyzer import ArtifactAnalyzer
 from core.application.case_service import CaseService
 from core.application.deadline_engine import DeadlineEngine
+from core.application.egress_policy import EgressPolicy
 from core.application.identity_service import IdentityService
 from core.application.investigation_service import InvestigationService
+from core.application.network_policy import NetworkPolicy
 from core.application.paths import default_app_paths
+from core.application.research_service import ResearchService
 from core.application.target_service import TargetService
 from core.domain.rights import RightsPolicy
 from core.storage.artifact_store import ArtifactStore
@@ -58,11 +61,15 @@ def build_controller() -> tuple[AppController, SettingsStore]:
         RightsPolicy(),
         DeadlineEngine(),
     )
+    network_policy = NetworkPolicy()
+    research_service = ResearchService(network_policy)
     investigation_service = InvestigationService(
         InvestigationRepository(database, sensitive_store),
         ArtifactStore(paths.artifacts_dir, sensitive_store),
         identity_service,
         ArtifactAnalyzer(),
+        research_service,
+        EgressPolicy(),
     )
     return (
         AppController(identity_service, target_service, case_service, investigation_service),
