@@ -103,19 +103,6 @@ function analyzeArtifact(artifactId) {
   });
 }
 
-function researchArtifact(artifactId) {
-  if (!backend || !selectedInvestigationId) return;
-  backend.researchArtifact(selectedInvestigationId, artifactId, (response) => {
-    if (response?.ok) {
-      const count = response.result?.createdCount ?? 0;
-      setStatus(count ? `${count} research evidence item(s) recorded.` : "No new public research evidence was needed.");
-      loadInvestigation(selectedInvestigationId);
-    } else if (response?.error?.message) {
-      setStatus(response.error.message, true);
-    }
-  });
-}
-
 function renderInvestigationDetail(detail) {
   selectedInvestigationDetail = detail;
   investigationDetailEmptyNode.hidden = true;
@@ -141,13 +128,7 @@ function renderInvestigationDetail(detail) {
     const value = document.createElement("small");
     value.textContent = `${artifact.mediaType} · ${artifact.byteSize} bytes`;
     info.append(title, value);
-    const actions = document.createElement("div");
-    actions.className = "record-actions";
-    actions.append(
-      makeButton("Analyze", () => analyzeArtifact(artifact.id)),
-      makeButton("Research URLs", () => researchArtifact(artifact.id)),
-    );
-    row.append(info, actions);
+    row.append(info, makeButton("Analyze", () => analyzeArtifact(artifact.id)));
     investigationDetailListNode.appendChild(row);
   }
 
