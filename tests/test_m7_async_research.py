@@ -34,7 +34,7 @@ def test_research_runner_executes_use_case_off_calling_thread_and_returns_signal
     succeeded = QSignalSpy(runner.researchSucceeded)
     caller_thread_id = threading.get_ident()
 
-    assert runner.start(7, 11) is True
+    assert runner.start(7, 11, approved_by_user=True) is True
     assert succeeded.wait(2_000)
     runner.shutdown()
 
