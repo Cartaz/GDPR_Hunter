@@ -4,9 +4,9 @@ GDPR Hunter is a local-first desktop privacy application under active developmen
 
 ## Current status
 
-Milestone **M6 — Research Foundation** is implemented. The current codebase provides the desktop foundation, encrypted identity/artifact storage, Target Registry, GDPR Case workflow, deterministic rights/deadline logic, evidence-backed Investigations, deterministic Artifact analysis, and a guarded public-network research foundation.
+Milestone **M7 — Async Research Integration** is implemented on the current development branch. The codebase provides the desktop foundation, encrypted identity/artifact storage, Target Registry, GDPR Case workflow, deterministic rights/deadline logic, evidence-backed Investigations, deterministic Artifact analysis, guarded public-network research, and non-blocking UI execution of that research.
 
-M6 adds:
+M6 established the guarded research foundation:
 
 - `NetworkPolicy` validation for outbound public HTTP(S) research;
 - rejection of localhost, private, link-local, reserved and otherwise non-public resolved IP addresses;
@@ -20,9 +20,19 @@ M6 adds:
 - preservation of redirect observations and final URL as Evidence;
 - deterministic analysis of fetched reference documents after they are stored locally.
 
-Research requests are restricted to HTTP(S) URLs first extracted as deterministic Evidence from an Artifact, and the application service requires explicit approval before network access. The network workflow is intentionally **not exposed through QWebChannel/UI yet**: executing it synchronously would block the Qt GUI thread. The next integration step must run research in an owned worker with completion/error signalling and cancellation where feasible. There is no disconnected `Research` control in the UI.
+M7 integrates that existing use case with the desktop application without moving networking into Qt or QWebChannel:
 
-Durable auditing of `EgressPolicy` decisions is also intentionally deferred until the inference milestone, when both user actions and model-proposed research will share one outbound-intent model. Authorization is already enforced; the deferred work is persistence of the audit trail, not the security gate itself.
+- `ResearchRunner` owns a dedicated Qt worker thread for one bounded research operation at a time;
+- the worker invokes the normal Python `AppController` use case, so `InvestigationService`, `ResearchService`, `NetworkPolicy`, and `EgressPolicy` remain the single implementation of research rules;
+- QWebChannel exposes only the semantic `researchArtifactUrls` action, never arbitrary URL fetch or socket primitives;
+- the local UI requires an explicit confirmation before starting outbound research;
+- start, completion, and failure return through Qt signals while the GUI thread remains responsive;
+- application shutdown waits for the owned research worker within a bounded window instead of abandoning an unowned thread;
+- concurrent research starts are rejected while one operation is active.
+
+Research requests remain restricted to HTTP(S) URLs first extracted as deterministic Evidence from an Artifact. The UI cannot supply arbitrary destinations or privileged evidence provenance.
+
+Durable auditing of `EgressPolicy` decisions remains intentionally deferred until the inference milestone, when both user actions and model-proposed research will share one outbound-intent model. Authorization is already enforced; the deferred work is persistence of the audit trail, not the security gate itself.
 
 The M5 `ArtifactAnalyzer` continues to cover SMS/text/company-response URLs, hosts and plausible telephone numbers; email sender-related headers/domains, Message-ID domain, DKIM `d=` domain and plain-text-body URLs; and URL artifacts. Parsing itself has no network authority.
 
@@ -30,7 +40,7 @@ The Investigation model continues to enforce encrypted Artifact storage, mandato
 
 Supported GDPR Case workflows remain Article 15 access/provenance, Article 17 erasure and Article 21(2)-(3) direct-marketing objection. Deadline calculations use calendar months and support injected public holidays; automatic jurisdiction-specific holiday resolution is still planned.
 
-LLM inference, asynchronous UI research execution, autonomous research planning, browser automation, exposure discovery, automated request delivery, monitoring and escalation are **not implemented yet**.
+LLM inference, autonomous research planning, browser automation, exposure discovery, automated request delivery, monitoring and escalation are **not implemented yet**.
 
 ## Architecture
 
@@ -46,6 +56,7 @@ LLM inference, asynchronous UI research execution, autonomous research planning,
 - `ArtifactAnalyzer` is deterministic and has no network authority
 - `ResearchService` owns bounded network mechanics behind `NetworkPolicy`
 - outbound research requires explicit `EgressPolicy` authorization
+- `ResearchRunner` owns Qt threading for research execution only; it contains no domain or network policy
 - the QWebChannel bridge exposes no network primitive and performs no blocking research
 - GDPR rights and deadline rules remain deterministic Python modules
 
@@ -72,4 +83,4 @@ chmod +x install.sh
 
 ## Security posture
 
-The application is designed around local-first processing, explicit outbound-data control, local-only WebEngine content, redacted diagnostics, encrypted sensitive persistence, append-only Case timelines, immutable Artifact metadata, evidence provenance, deterministic parsing without network authority, SSRF-resistant bounded research, and strict separation between future LLM inference and canonical application state.
+The application is designed around local-first processing, explicit outbound-data control, local-only WebEngine content, redacted diagnostics, encrypted sensitive persistence, append-only Case timelines, immutable Artifact metadata, evidence provenance, deterministic parsing without network authority, SSRF-resistant bounded research, owned asynchronous execution, and strict separation between future LLM inference and canonical application state.
