@@ -35,3 +35,15 @@ def test_bridge_returns_safe_validation_error():
 
     assert result["ok"] is False
     assert result["error"]["code"] == "INVALID_INPUT"
+
+
+def test_bridge_rejects_research_without_explicit_user_approval():
+    controller = FakeController()
+    runner = ResearchRunner(controller)  # type: ignore[arg-type]
+    bridge = Bridge(controller, runner)  # type: ignore[arg-type]
+
+    result = bridge.researchArtifactUrls(1, 1, False)
+
+    assert result["ok"] is False
+    assert result["error"]["code"] == "APPROVAL_REQUIRED"
+    assert runner.is_busy is False
