@@ -8,7 +8,11 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from urllib.parse import quote, urljoin
 
-from core.application.network_policy import NetworkPolicy, NetworkPolicyError, ValidatedPublicUrl
+from core.application.network_policy import (
+    NetworkPolicy,
+    NetworkPolicyError,
+    ValidatedPublicUrl,
+)
 
 
 class ResearchError(RuntimeError):
@@ -48,14 +52,16 @@ class ResearchService:
     MAX_DOCUMENT_BYTES = 1024 * 1024
     MAX_REDIRECTS = 5
     TIMEOUT_SECONDS = 8
-    ALLOWED_CONTENT_TYPES = {
-        "text/html",
-        "text/plain",
-        "application/xhtml+xml",
-        "application/json",
-        "application/rdap+json",
-    }
-    REDIRECT_STATUSES = {301, 302, 303, 307, 308}
+    ALLOWED_CONTENT_TYPES = frozenset(
+        {
+            "text/html",
+            "text/plain",
+            "application/xhtml+xml",
+            "application/json",
+            "application/rdap+json",
+        }
+    )
+    REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
     IANA_RDAP_BOOTSTRAP = "https://data.iana.org/rdap/dns.json"
 
     def __init__(
@@ -127,7 +133,9 @@ class ResearchService:
             raise ResearchError("IANA RDAP bootstrap response is malformed") from exc
 
         base_url = self._rdap_base_for_tld(services, tld)
-        return self.fetch_public_document(urljoin(base_url.rstrip("/") + "/", f"domain/{quote(normalized)}"))
+        return self.fetch_public_document(
+            urljoin(base_url.rstrip("/") + "/", f"domain/{quote(normalized)}")
+        )
 
     @staticmethod
     def _rdap_base_for_tld(services: object, tld: str) -> str:
@@ -155,23 +163,25 @@ class ResearchService:
         timeout_seconds: int,
         max_bytes: int,
     ) -> TransportResponse:
-        last_error: OSError | ssl.SSLError | None = None
+        last_error: OSError | http.client.HTTPException | None = None
         for address in validated.addresses:
             raw_socket: socket.socket | None = None
             wrapped_socket: socket.socket | None = None
             try:
-                raw_socket = socket.create_connection((address, validated.port), timeout=timeout_seconds)
+                raw_socket = socket.create_connection(
+                    (address, validated.port), timeout=timeout_seconds
+                )
                 active_socket: socket.socket
                 if validated.scheme == "https":
                     context = ssl.create_default_context()
-                    wrapped_socket = context.wrap_socket(raw_socket, server_hostname=validated.hostname)
+                    wrapped_socket = context.wrap_socket(
+                        raw_socket, server_hostname=validated.hostname
+                    )
                     active_socket = wrapped_socket
                 else:
                     active_socket = raw_socket
 
                 host_header = validated.hostname
-                if validated.port not in {80, 443}:
-                    host_header = f"{host_header}:{validated.port}"
                 request = (
                     f"GET {validated.request_target} HTTP/1.1\r\n"
                     f"Host: {host_header}\r\n"
@@ -189,7 +199,7 @@ class ResearchService:
                 return TransportResponse(response.status, headers, body)
             except ResearchError:
                 raise
-            except (OSError, ssl.SSLError) as exc:
+            except (OSError, http.client.HTTPException) as exc:
                 last_error = exc
             finally:
                 if wrapped_socket is not None:
