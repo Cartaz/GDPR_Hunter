@@ -5,7 +5,6 @@ import logging
 from PySide6.QtCore import QObject, Signal, Slot
 
 from core.application.app_controller import AppController
-from core.application.research_service import ResearchError
 
 _LOG = logging.getLogger(__name__)
 
@@ -76,10 +75,6 @@ class Bridge(QObject):
     def analyzeArtifact(self, investigation_id: int, artifact_id: int) -> dict[str, object]:
         return self._mutate(lambda: self._controller.analyze_artifact(investigation_id, artifact_id))
 
-    @Slot(int, int, result="QVariant")
-    def researchArtifact(self, investigation_id: int, artifact_id: int) -> dict[str, object]:
-        return self._mutate(lambda: self._controller.research_artifact(investigation_id, artifact_id))
-
     @Slot(int, int, str, str, result="QVariant")
     def addUserEvidence(
         self,
@@ -108,13 +103,13 @@ class Bridge(QObject):
     def _read(self, operation):
         try:
             return operation()
-        except (ValueError, LookupError, PermissionError, ResearchError) as exc:
+        except (ValueError, LookupError) as exc:
             return self._fail("INVALID_INPUT", str(exc))
 
     def _mutate(self, operation) -> dict[str, object]:
         try:
             result = operation()
-        except (ValueError, LookupError, PermissionError, ResearchError) as exc:
+        except (ValueError, LookupError) as exc:
             return self._fail("INVALID_INPUT", str(exc))
         self.stateChanged.emit(self._controller.get_bootstrap_state())
         return {"ok": True, "result": result}
