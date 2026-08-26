@@ -4,23 +4,25 @@ GDPR Hunter is a local-first desktop privacy application under active developmen
 
 ## Current status
 
-Milestone **M6 — Research Foundation** is implemented. The current codebase provides the desktop foundation, encrypted identity/artifact storage, Target Registry, GDPR Case workflow, deterministic rights/deadline logic, evidence-backed Investigations, deterministic Artifact analysis, and a first guarded public-network research layer.
+Milestone **M6 — Research Foundation** is implemented. The current codebase provides the desktop foundation, encrypted identity/artifact storage, Target Registry, GDPR Case workflow, deterministic rights/deadline logic, evidence-backed Investigations, deterministic Artifact analysis, and a guarded public-network research foundation.
 
 M6 adds:
 
 - `NetworkPolicy` validation for outbound public HTTP(S) research;
 - rejection of localhost, private, link-local, reserved and otherwise non-public resolved IP addresses;
-- rejection of embedded URL credentials, non-HTTP(S) schemes and non-standard ports;
+- rejection of embedded URL credentials, non-HTTP(S) schemes and ports other than the scheme default (HTTP 80 / HTTPS 443);
 - DNS resolution before connection and transport pinning to the validated IP while retaining the original hostname/SNI for HTTPS;
 - manual redirect handling with full policy revalidation on every hop and a bounded redirect count;
-- bounded response size, short timeout, restricted textual/JSON content types, and no automatic retries or browser execution;
+- bounded response size, short timeout, restricted textual/JSON content types, and no browser execution;
 - `ResearchService` helpers for public document fetch, public DNS resolution and IANA-bootstrap-based domain RDAP lookup;
-- explicit `EgressPolicy` approval before research-capable operations;
+- explicit `EgressPolicy` authorization before research-capable operations;
 - encrypted storage of fetched public documents as reference Artifacts and `REMOTE_DOCUMENT` Evidence;
-- deterministic analysis of fetched reference documents after they are stored locally;
-- an explicit user-triggered `Research URLs` action in the Investigation workbench. The bridge does not expose a generic `fetchUrl` capability.
+- preservation of redirect observations and final URL as Evidence;
+- deterministic analysis of fetched reference documents after they are stored locally.
 
-Research is currently restricted to HTTP(S) URLs that were first extracted as deterministic Evidence from an Artifact. The user must explicitly trigger the research action. LLM inference cannot request or execute network access because LLM inference is not implemented yet.
+Research requests are restricted to HTTP(S) URLs first extracted as deterministic Evidence from an Artifact, and the application service requires explicit approval before network access. The network workflow is intentionally **not exposed through QWebChannel/UI yet**: executing it synchronously would block the Qt GUI thread. The next integration step must run research in an owned worker with completion/error signalling and cancellation where feasible. There is no disconnected `Research` control in the UI.
+
+Durable auditing of `EgressPolicy` decisions is also intentionally deferred until the inference milestone, when both user actions and model-proposed research will share one outbound-intent model. Authorization is already enforced; the deferred work is persistence of the audit trail, not the security gate itself.
 
 The M5 `ArtifactAnalyzer` continues to cover SMS/text/company-response URLs, hosts and plausible telephone numbers; email sender-related headers/domains, Message-ID domain, DKIM `d=` domain and plain-text-body URLs; and URL artifacts. Parsing itself has no network authority.
 
@@ -28,7 +30,7 @@ The Investigation model continues to enforce encrypted Artifact storage, mandato
 
 Supported GDPR Case workflows remain Article 15 access/provenance, Article 17 erasure and Article 21(2)-(3) direct-marketing objection. Deadline calculations use calendar months and support injected public holidays; automatic jurisdiction-specific holiday resolution is still planned.
 
-LLM inference, autonomous research planning, browser automation, exposure discovery, automated request delivery, monitoring and escalation are **not implemented yet**.
+LLM inference, asynchronous UI research execution, autonomous research planning, browser automation, exposure discovery, automated request delivery, monitoring and escalation are **not implemented yet**.
 
 ## Architecture
 
@@ -44,7 +46,7 @@ LLM inference, autonomous research planning, browser automation, exposure discov
 - `ArtifactAnalyzer` is deterministic and has no network authority
 - `ResearchService` owns bounded network mechanics behind `NetworkPolicy`
 - outbound research requires explicit `EgressPolicy` authorization
-- the bridge exposes semantic user actions rather than arbitrary network/filesystem primitives
+- the QWebChannel bridge exposes no network primitive and performs no blocking research
 - GDPR rights and deadline rules remain deterministic Python modules
 
 ## Install
