@@ -14,11 +14,18 @@ class _ResearchWorker(QObject):
     failed = Signal(int, int, str, str)
     completed = Signal()
 
-    def __init__(self, controller: AppController, investigation_id: int, artifact_id: int) -> None:
+    def __init__(
+        self,
+        controller: AppController,
+        investigation_id: int,
+        artifact_id: int,
+        approved_by_user: bool,
+    ) -> None:
         super().__init__()
         self._controller = controller
         self._investigation_id = investigation_id
         self._artifact_id = artifact_id
+        self._approved_by_user = approved_by_user
 
     @Slot()
     def run(self) -> None:
@@ -26,7 +33,7 @@ class _ResearchWorker(QObject):
             result = self._controller.research_artifact_urls(
                 self._investigation_id,
                 self._artifact_id,
-                approved_by_user=True,
+                approved_by_user=self._approved_by_user,
             )
         except (ValueError, LookupError) as exc:
             self.failed.emit(
@@ -36,7 +43,7 @@ class _ResearchWorker(QObject):
                 str(exc),
             )
         except RuntimeError as exc:
-            _LOG.warning("Research operation failed: %s", exc)
+            _LOG.warning("Research operation failed")
             self.failed.emit(
                 self._investigation_id,
                 self._artifact_id,
@@ -76,12 +83,23 @@ class ResearchRunner(QObject):
     def is_busy(self) -> bool:
         return self._thread is not None
 
-    def start(self, investigation_id: int, artifact_id: int) -> bool:
+    def start(
+        self,
+        investigation_id: int,
+        artifact_id: int,
+        *,
+        approved_by_user: bool,
+    ) -> bool:
         if self.is_busy:
             return False
 
         thread = QThread(self)
-        worker = _ResearchWorker(self._controller, investigation_id, artifact_id)
+        worker = _ResearchWorker(
+            self._controller,
+            investigation_id,
+            artifact_id,
+            approved_by_user,
+        )
         worker.moveToThread(thread)
 
         thread.started.connect(worker.run)
