@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from core.domain.identity import Identifier, IdentifierKind, Identity
 from ui.bridge import Bridge
+from ui.research_runner import ResearchRunner
 
 
 class FakeController:
     def get_bootstrap_state(self):
-        return {"identity": {"displayName": None, "identifierCount": 0}, "milestone": "M1 — Foundation"}
+        return {"identity": {"displayName": None, "identifierCount": 0}, "milestone": "M7 — Async Research Integration"}
 
     def set_display_name(self, display_name):
         return {"displayName": display_name or None}
@@ -27,7 +28,8 @@ def test_sensitive_domain_repr_is_redacted():
 
 
 def test_bridge_returns_safe_validation_error():
-    bridge = Bridge(FakeController())  # type: ignore[arg-type]
+    controller = FakeController()
+    bridge = Bridge(controller, ResearchRunner(controller))  # type: ignore[arg-type]
 
     result = bridge.addIdentifier("EMAIL", "   ", "")
 
