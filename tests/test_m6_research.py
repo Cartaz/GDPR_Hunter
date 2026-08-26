@@ -42,8 +42,13 @@ def test_network_policy_rejects_non_public_destinations_and_unsafe_urls():
         public_policy.validate_public_url("file:///etc/passwd")
     with pytest.raises(NetworkPolicyError, match="credentials"):
         public_policy.validate_public_url("https://user:secret@example.test/")
-    with pytest.raises(NetworkPolicyError, match="disallowed port"):
-        public_policy.validate_public_url("https://example.test:8443/")
+    for url in (
+        "https://example.test:8443/",
+        "https://example.test:80/",
+        "http://example.test:443/",
+    ):
+        with pytest.raises(NetworkPolicyError, match="disallowed port"):
+            public_policy.validate_public_url(url)
 
 
 def test_network_policy_rejects_host_if_any_resolved_address_is_private():
@@ -66,7 +71,7 @@ def test_research_revalidates_every_redirect_before_transport():
     assert calls == ["https://example.test/start"]
 
 
-def test_research_enforces_content_type_and_redirect_limit():
+def test_research_enforces_content_type_size_and_redirect_limit():
     policy = NetworkPolicy(resolver_for(PUBLIC_IP))
 
     def binary_transport(_validated, _timeout, _max_bytes):
@@ -74,6 +79,12 @@ def test_research_enforces_content_type_and_redirect_limit():
 
     with pytest.raises(ResearchError, match="content type"):
         ResearchService(policy, binary_transport).fetch_public_document("https://example.test/")
+
+    def oversized_transport(_validated, _timeout, max_bytes):
+        return TransportResponse(200, {"content-type": "text/plain"}, b"x" * (max_bytes + 1))
+
+    with pytest.raises(ResearchError, match="size limit"):
+        ResearchService(policy, oversized_transport).fetch_public_document("https://example.test/")
 
     def loop_transport(validated, _timeout, _max_bytes):
         return TransportResponse(302, {"location": validated.url}, b"")
@@ -128,6 +139,12 @@ def test_investigation_research_requires_approval_and_records_remote_snapshot(tm
 
     def transport(validated, _timeout, _max_bytes):
         transport_calls.append(validated.url)
+        if validated.url == "https://example.test/privacy":
+            return TransportResponse(
+                302,
+                {"location": "https://www.example.test/privacy"},
+                b"",
+            )
         return TransportResponse(
             200,
             {"content-type": "text/html; charset=utf-8"},
@@ -152,12 +169,16 @@ def test_investigation_research_requires_approval_and_records_remote_snapshot(tm
     assert transport_calls == []
 
     created = service.research_artifact_urls(investigation.id, artifact.id, approved_by_user=True)
-    assert transport_calls == ["https://example.test/privacy"]
+    assert transport_calls == [
+        "https://example.test/privacy",
+        "https://www.example.test/privacy",
+    ]
     assert any(item.provenance is EvidenceProvenance.REMOTE_DOCUMENT for item in created)
+    assert any(item.source_locator == "research.redirect[0]" for item in created)
     assert any(item.value == "partner.example.test" for item in created)
     assert len(service.list_artifacts(investigation.id)) == 2
     assert b"Privacy policy" not in database.path.read_bytes()
 
     again = service.research_artifact_urls(investigation.id, artifact.id, approved_by_user=True)
     assert again == []
-    assert transport_calls == ["https://example.test/privacy"]
+    assert len(transport_calls) == 2
