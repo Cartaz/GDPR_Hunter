@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from core.application.artifact_analyzer import ArtifactAnalyzer
+from core.application.egress_policy import EgressPolicy, OutboundIntent
 from core.application.identity_service import IdentityService
+from core.application.research_service import ResearchService
 from core.domain.investigation import (
     Artifact,
     ArtifactKind,
@@ -23,7 +25,7 @@ from core.storage.investigation_repository import InvestigationRepository
 
 
 class InvestigationService:
-    """Own investigation state, deterministic analysis, evidence, claims, and artifacts."""
+    """Own investigation state, deterministic analysis, research, evidence, claims, and artifacts."""
 
     MAX_ARTIFACT_BYTES = 2 * 1024 * 1024
 
@@ -33,11 +35,15 @@ class InvestigationService:
         artifact_store: ArtifactStore,
         identity_service: IdentityService,
         artifact_analyzer: ArtifactAnalyzer,
+        research_service: ResearchService | None = None,
+        egress_policy: EgressPolicy | None = None,
     ) -> None:
         self._repository = repository
         self._artifact_store = artifact_store
         self._identity_service = identity_service
         self._artifact_analyzer = artifact_analyzer
+        self._research_service = research_service
+        self._egress_policy = egress_policy
 
     def create_investigation(self, title: str | None) -> Investigation:
         identity = self._identity_service.get_identity()
@@ -116,6 +122,80 @@ class InvestigationService:
             )
             created.append(evidence)
             existing.add(key)
+        return created
+
+    def research_artifact_urls(
+        self,
+        investigation_id: int,
+        artifact_id: int,
+        *,
+        approved_by_user: bool,
+    ) -> list[Evidence]:
+        self._require_investigation(investigation_id)
+        if self._research_service is None or self._egress_policy is None:
+            raise RuntimeError("Research capability is not configured")
+
+        source_evidence = [
+            item
+            for item in self._repository.list_evidence(investigation_id)
+            if item.artifact_id == artifact_id
+            and item.provenance is EvidenceProvenance.DETERMINISTIC_ANALYSIS
+            and item.value is not None
+            and item.value.lower().startswith(("http://", "https://"))
+        ]
+        if not source_evidence:
+            raise ValueError("Analyze the artifact before researching its public URLs")
+
+        existing = {
+            (item.provenance, item.value, item.source_locator)
+            for item in self._repository.list_evidence(investigation_id)
+        }
+        created: list[Evidence] = []
+        for source in source_evidence:
+            source_url = source.value
+            if source_url is None:
+                continue
+            marker = f"research.request:{source_url}"
+            if (EvidenceProvenance.REMOTE_DOCUMENT, source_url, marker) in existing:
+                continue
+
+            self._egress_policy.require_allowed(
+                OutboundIntent(
+                    operation="PUBLIC_RESEARCH_FETCH",
+                    destination=source_url,
+                    data_class="PUBLIC_OR_OBSERVED_URL",
+                    approved_by_user=approved_by_user,
+                )
+            )
+            document = self._research_service.fetch_public_document(source_url)
+            reference = self.import_artifact(
+                investigation_id,
+                ArtifactKind.TEXT,
+                ArtifactRole.REFERENCE,
+                document.content_type,
+                document.body,
+            )
+            fetched = self.add_evidence(
+                investigation_id,
+                reference.id,
+                EvidenceKind.OBSERVATION,
+                EvidenceProvenance.REMOTE_DOCUMENT,
+                source_url,
+                marker,
+            )
+            created.append(fetched)
+            final = self.add_evidence(
+                investigation_id,
+                reference.id,
+                EvidenceKind.OBSERVATION,
+                EvidenceProvenance.REMOTE_DOCUMENT,
+                document.final_url,
+                "research.final_url",
+            )
+            created.append(final)
+            if reference.id is not None:
+                created.extend(self.analyze_artifact(investigation_id, reference.id))
+            existing.add((EvidenceProvenance.REMOTE_DOCUMENT, source_url, marker))
         return created
 
     def add_evidence(
