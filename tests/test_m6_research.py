@@ -81,8 +81,9 @@ def test_research_enforces_content_type_and_redirect_limit():
 def test_rdap_lookup_uses_iana_bootstrap_and_selected_https_service():
     policy = NetworkPolicy(resolver_for(PUBLIC_IP))
     calls = []
-    bootstrap = json.dumps({"services": [["com"], ["invalid"]]}).encode()
-    bootstrap = json.dumps({"services": [[ ["com"], ["https://rdap.example.test/"] ]]}).encode()
+    bootstrap = json.dumps(
+        {"services": [[["com"], ["https://rdap.example.test/"]]]}
+    ).encode()
 
     def transport(validated, _timeout, _max_bytes):
         calls.append(validated.url)
