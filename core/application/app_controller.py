@@ -53,12 +53,12 @@ class AppController:
             "rights": [self._right_dto(policy) for policy in self._case_service.supported_rights()],
             "cases": [self._case_dto(case) for case in cases],
             "investigations": [self._investigation_dto(item) for item in investigations],
-            "milestone": "M5 — Deterministic Artifact Analysis",
+            "milestone": "M6 — Research Foundation",
             "features": {
                 "investigatorCore": True,
                 "artifactAnalysis": True,
                 "inference": False,
-                "research": False,
+                "research": True,
                 "cases": True,
                 "targets": True,
                 "rightsPolicy": True,
@@ -132,6 +132,17 @@ class AppController:
 
     def analyze_artifact(self, investigation_id: int, artifact_id: int) -> dict[str, object]:
         created = self._investigation_service.analyze_artifact(investigation_id, artifact_id)
+        return {
+            "createdCount": len(created),
+            "evidence": [self._evidence_dto(item) for item in created],
+        }
+
+    def research_artifact(self, investigation_id: int, artifact_id: int) -> dict[str, object]:
+        created = self._investigation_service.research_artifact_urls(
+            investigation_id,
+            artifact_id,
+            approved_by_user=True,
+        )
         return {
             "createdCount": len(created),
             "evidence": [self._evidence_dto(item) for item in created],
