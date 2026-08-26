@@ -43,6 +43,15 @@ def test_frontend_cannot_assign_privileged_investigation_provenance():
     assert "def createClaim" not in bridge
 
 
+def test_blocking_research_is_not_exposed_through_qwebchannel():
+    javascript = (ROOT / "ui" / "web" / "js" / "app.js").read_text(encoding="utf-8")
+    bridge = (ROOT / "ui" / "bridge.py").read_text(encoding="utf-8")
+
+    assert "researchArtifact" not in javascript
+    assert "researchArtifact" not in bridge
+    assert "fetchUrl" not in bridge
+
+
 def test_local_navigation_is_confined_to_web_root(tmp_path):
     web_root = tmp_path / "ui" / "web"
     web_root.mkdir(parents=True)
