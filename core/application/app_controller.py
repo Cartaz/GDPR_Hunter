@@ -57,8 +57,9 @@ class AppController:
             "features": {
                 "investigatorCore": True,
                 "artifactAnalysis": True,
+                "researchFoundation": True,
+                "research": False,
                 "inference": False,
-                "research": True,
                 "cases": True,
                 "targets": True,
                 "rightsPolicy": True,
@@ -132,17 +133,6 @@ class AppController:
 
     def analyze_artifact(self, investigation_id: int, artifact_id: int) -> dict[str, object]:
         created = self._investigation_service.analyze_artifact(investigation_id, artifact_id)
-        return {
-            "createdCount": len(created),
-            "evidence": [self._evidence_dto(item) for item in created],
-        }
-
-    def research_artifact(self, investigation_id: int, artifact_id: int) -> dict[str, object]:
-        created = self._investigation_service.research_artifact_urls(
-            investigation_id,
-            artifact_id,
-            approved_by_user=True,
-        )
         return {
             "createdCount": len(created),
             "evidence": [self._evidence_dto(item) for item in created],
