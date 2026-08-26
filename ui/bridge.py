@@ -5,6 +5,7 @@ import logging
 from PySide6.QtCore import QObject, Signal, Slot
 
 from core.application.app_controller import AppController
+from ui.research_runner import ResearchRunner
 
 _LOG = logging.getLogger(__name__)
 
@@ -12,10 +13,17 @@ _LOG = logging.getLogger(__name__)
 class Bridge(QObject):
     stateChanged = Signal(object)
     operationFailed = Signal(str, str)
+    researchStarted = Signal(int, int)
+    researchCompleted = Signal(int, int, object)
+    researchFailed = Signal(int, int, str, str)
 
-    def __init__(self, controller: AppController) -> None:
+    def __init__(self, controller: AppController, research_runner: ResearchRunner) -> None:
         super().__init__()
         self._controller = controller
+        self._research_runner = research_runner
+        research_runner.researchStarted.connect(self.researchStarted)
+        research_runner.researchSucceeded.connect(self._research_succeeded)
+        research_runner.researchFailed.connect(self._research_failed)
 
     @Slot(result="QVariant")
     def getBootstrapState(self) -> dict[str, object]:
@@ -75,6 +83,14 @@ class Bridge(QObject):
     def analyzeArtifact(self, investigation_id: int, artifact_id: int) -> dict[str, object]:
         return self._mutate(lambda: self._controller.analyze_artifact(investigation_id, artifact_id))
 
+    @Slot(int, int, result="QVariant")
+    def researchArtifactUrls(self, investigation_id: int, artifact_id: int) -> dict[str, object]:
+        if investigation_id <= 0 or artifact_id <= 0:
+            return self._fail("INVALID_INPUT", "Investigation and artifact ids must be positive")
+        if not self._research_runner.start(investigation_id, artifact_id):
+            return self._fail("BUSY", "Another research operation is already running")
+        return {"ok": True}
+
     @Slot(int, int, str, str, result="QVariant")
     def addUserEvidence(
         self,
@@ -99,6 +115,28 @@ class Bridge(QObject):
     @Slot(int, result="QVariant")
     def getInvestigationDetail(self, investigation_id: int) -> dict[str, object]:
         return self._read(lambda: self._controller.get_investigation_detail(investigation_id))
+
+    @Slot(int, int, object)
+    def _research_succeeded(
+        self,
+        investigation_id: int,
+        artifact_id: int,
+        result: object,
+    ) -> None:
+        self.stateChanged.emit(self._controller.get_bootstrap_state())
+        self.researchCompleted.emit(investigation_id, artifact_id, result)
+
+    @Slot(int, int, str, str)
+    def _research_failed(
+        self,
+        investigation_id: int,
+        artifact_id: int,
+        code: str,
+        message: str,
+    ) -> None:
+        _LOG.warning("Asynchronous research failed: code=%s", code)
+        self.researchFailed.emit(investigation_id, artifact_id, code, message)
+        self.operationFailed.emit(code, message)
 
     def _read(self, operation):
         try:
