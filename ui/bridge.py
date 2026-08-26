@@ -87,7 +87,11 @@ class Bridge(QObject):
     def researchArtifactUrls(self, investigation_id: int, artifact_id: int) -> dict[str, object]:
         if investigation_id <= 0 or artifact_id <= 0:
             return self._fail("INVALID_INPUT", "Investigation and artifact ids must be positive")
-        if not self._research_runner.start(investigation_id, artifact_id):
+        if not self._research_runner.start(
+            investigation_id,
+            artifact_id,
+            approved_by_user=True,
+        ):
             return self._fail("BUSY", "Another research operation is already running")
         return {"ok": True}
 
