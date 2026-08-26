@@ -28,7 +28,6 @@ class NetworkPolicy:
     """Validate outbound research destinations and resolve only public addresses."""
 
     ALLOWED_SCHEMES = frozenset({"http", "https"})
-    ALLOWED_PORTS = frozenset({80, 443})
 
     def __init__(self, resolver: Resolver | None = None) -> None:
         self._resolver = resolver or socket.getaddrinfo
@@ -40,9 +39,11 @@ class NetworkPolicy:
 
         parsed = urlsplit(normalized)
         self._validate_parsed_url(parsed)
+        scheme = parsed.scheme.lower()
         hostname = self._normalize_hostname(parsed.hostname)
-        port = parsed.port or (443 if parsed.scheme.lower() == "https" else 80)
-        if port not in self.ALLOWED_PORTS:
+        expected_port = 443 if scheme == "https" else 80
+        port = parsed.port or expected_port
+        if port != expected_port:
             raise NetworkPolicyError("Research URL uses a disallowed port")
 
         addresses = self.resolve_public_host(hostname, port)
@@ -51,7 +52,7 @@ class NetworkPolicy:
             request_target += f"?{parsed.query}"
         return ValidatedPublicUrl(
             url=normalized,
-            scheme=parsed.scheme.lower(),
+            scheme=scheme,
             hostname=hostname,
             port=port,
             request_target=request_target,
