@@ -36,8 +36,23 @@ jobs:
       - name: Compile
         run: .venv/bin/python -m compileall -q main.py config core ui tests
 
-      - name: Ruff
-        run: .venv/bin/ruff check main.py config core ui tests
+      - name: Ruff main
+        run: .venv/bin/ruff check main.py
+
+      - name: Ruff proposal review service
+        run: .venv/bin/ruff check core/application/proposal_review_service.py
+
+      - name: Ruff bridge
+        run: .venv/bin/ruff check ui/bridge.py
+
+      - name: Ruff M13 tests
+        run: .venv/bin/ruff check tests/test_m13_async_model_analysis.py
+
+      - name: Ruff M14 tests
+        run: .venv/bin/ruff check tests/test_m14_proposal_review.py
+
+      - name: Ruff remaining
+        run: .venv/bin/ruff check config core ui tests --exclude core/application/proposal_review_service.py --exclude ui/bridge.py --exclude tests/test_m13_async_model_analysis.py --exclude tests/test_m14_proposal_review.py
 
       - name: Pytest
         run: .venv/bin/python -m pytest
