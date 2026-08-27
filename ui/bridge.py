@@ -68,7 +68,7 @@ class Bridge(QObject):
 
     @Slot(int, str, result="QVariant")
     def recordCaseExtension(self, case_id: int, notified_on: str) -> dict[str, object]:
-        return self._mutate(lambda: self._controller.record_extension(case_id, notified_on))
+        return self._mutate(lambda: self._controller.record_case_extension(case_id, notified_on))
 
     @Slot(int, str, result="QVariant")
     def transitionCase(self, case_id: int, target_status: str) -> dict[str, object]:
