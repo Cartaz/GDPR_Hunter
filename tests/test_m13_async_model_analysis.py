@@ -41,6 +41,16 @@ class BusyModelRunner(QObject):
         return False
 
 
+class SignalModelRunner(QObject):
+    analysisStarted = Signal(int)
+    analysisSucceeded = Signal(int, object)
+    analysisFailed = Signal(int, str, str)
+
+    def start(self, _investigation_id: int, *, approved_by_user: bool) -> bool:
+        assert approved_by_user is True
+        return True
+
+
 def test_model_analysis_runner_executes_off_calling_thread_and_returns_proposals() -> None:
     application = QCoreApplication.instance() or QCoreApplication([])
     assert application is not None
@@ -96,11 +106,15 @@ def test_bridge_serializes_typed_model_proposals_without_mutation() -> None:
     assert application is not None
     controller = FakeController()
     research_runner = ResearchRunner(controller)  # type: ignore[arg-type]
-    bridge = Bridge(controller, research_runner)  # type: ignore[arg-type]
+    model_runner = SignalModelRunner()
+    bridge = Bridge(
+        controller,
+        research_runner,
+        model_runner,  # type: ignore[arg-type]
+    )
     completed = QSignalSpy(bridge.modelAnalysisCompleted)
 
-    relay = getattr(bridge, "_model_analysis_succeeded")
-    relay(
+    model_runner.analysisSucceeded.emit(
         7,
         (
             ClaimProposal("Example Ltd may control the campaign", (1, 2), 0.8),
