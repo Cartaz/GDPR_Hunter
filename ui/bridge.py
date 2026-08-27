@@ -5,7 +5,10 @@ import logging
 from PySide6.QtCore import QObject, Signal, Slot
 
 from core.application.app_controller import AppController
-from core.application.proposal_review_service import ProposalReviewService, ReviewProposal
+from core.application.proposal_review_service import (
+    ProposalReviewService,
+    ReviewProposal,
+)
 from core.domain.investigation import Claim
 from core.domain.model_proposal import ClaimProposal, ResearchEvidenceProposal
 from ui.model_analysis_runner import ModelAnalysisRunner
