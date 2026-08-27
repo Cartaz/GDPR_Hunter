@@ -30,12 +30,16 @@ const evidenceValueNode = document.getElementById("evidence-value");
 const evidenceLocatorNode = document.getElementById("evidence-locator");
 const claimForm = document.getElementById("claim-form");
 const claimStatementNode = document.getElementById("claim-statement");
+const modelAnalysisButton = document.getElementById("model-analysis-button");
+const modelProposalListNode = document.getElementById("model-proposal-list");
 
 let backend = null;
 let currentState = null;
 let selectedInvestigationId = null;
 let selectedInvestigationDetail = null;
 let activeResearchArtifactId = null;
+let activeModelInvestigationId = null;
+const proposalViews = new Map();
 
 function setStatus(message, isError = false) {
   statusNode.textContent = message;
@@ -116,11 +120,95 @@ function researchArtifactUrls(artifactId) {
   });
 }
 
+function requestModelAnalysis() {
+  if (!backend || !selectedInvestigationId || activeModelInvestigationId !== null) return;
+  const approved = window.confirm(
+    "Send the bounded Evidence snapshot for this investigation to the configured inference endpoint and generate inert proposals for review?",
+  );
+  if (!approved) return;
+  backend.analyzeInvestigationWithModel(selectedInvestigationId, approved, (response) => {
+    if (response?.ok) setStatus("Model analysis started in the background.");
+    else if (response?.error?.message) setStatus(response.error.message, true);
+  });
+}
+
+function removeProposalView(investigationId, token) {
+  const proposals = proposalViews.get(investigationId) ?? [];
+  proposalViews.set(investigationId, proposals.filter((proposal) => proposal.token !== token));
+  if (selectedInvestigationId === investigationId) renderModelProposals(investigationId);
+}
+
+function acceptModelClaim(investigationId, token) {
+  if (!backend) return;
+  const approved = window.confirm(
+    "Accept this model proposal as a MODEL_INFERENCE hypothesis backed by its cited Evidence?",
+  );
+  if (!approved) return;
+  backend.acceptModelClaim(token, approved, (response) => {
+    if (response?.ok) {
+      removeProposalView(investigationId, token);
+      setStatus("Reviewed model claim accepted as a hypothesis.");
+      loadInvestigation(investigationId);
+    } else if (response?.error?.message) {
+      setStatus(response.error.message, true);
+    }
+  });
+}
+
+function discardModelProposal(investigationId, token) {
+  if (!backend) return;
+  backend.discardModelProposal(token, (response) => {
+    if (response?.ok) {
+      removeProposalView(investigationId, token);
+      setStatus("Model proposal discarded.");
+    } else if (response?.error?.message) {
+      setStatus(response.error.message, true);
+    }
+  });
+}
+
+function renderModelProposals(investigationId) {
+  clearNode(modelProposalListNode);
+  const proposals = proposalViews.get(investigationId) ?? [];
+  if (!proposals.length) {
+    const empty = document.createElement("p");
+    empty.className = "muted empty-state";
+    empty.textContent = "No model proposals awaiting review.";
+    modelProposalListNode.appendChild(empty);
+    return;
+  }
+  for (const proposal of proposals) {
+    const row = document.createElement("div");
+    row.className = "record";
+    const info = document.createElement("div");
+    const title = document.createElement("strong");
+    const detail = document.createElement("small");
+    if (proposal.kind === "CLAIM") {
+      title.textContent = `Claim proposal · ${Math.round(proposal.confidence * 100)}% confidence`;
+      detail.textContent = `${proposal.statement} · Evidence ${proposal.evidenceIds.join(", ")}`;
+    } else {
+      title.textContent = `Research proposal · Evidence #${proposal.evidenceId}`;
+      detail.textContent = `${proposal.rationale} · execution is not enabled yet`;
+    }
+    info.append(title, detail);
+    const actions = document.createElement("div");
+    actions.className = "record-actions";
+    if (proposal.kind === "CLAIM") {
+      actions.appendChild(makeButton("Accept claim", () => acceptModelClaim(investigationId, proposal.token)));
+    }
+    actions.appendChild(makeButton("Discard", () => discardModelProposal(investigationId, proposal.token)));
+    row.append(info, actions);
+    modelProposalListNode.appendChild(row);
+  }
+}
+
 function renderInvestigationDetail(detail) {
   selectedInvestigationDetail = detail;
   investigationDetailEmptyNode.hidden = true;
   investigationDetailNode.hidden = false;
   investigationDetailTitleNode.textContent = detail.investigation.title ?? `Investigation #${detail.investigation.id}`;
+  modelAnalysisButton.disabled = activeModelInvestigationId !== null;
+  renderModelProposals(detail.investigation.id);
   clearNode(investigationDetailListNode);
 
   const summary = document.createElement("div");
@@ -382,10 +470,32 @@ function connectBackend() {
       setStatus(message, true);
       if (selectedInvestigationId === investigationId) loadInvestigation(investigationId);
     });
+    backend.modelAnalysisStarted.connect((investigationId) => {
+      activeModelInvestigationId = investigationId;
+      modelAnalysisButton.disabled = true;
+      proposalViews.delete(investigationId);
+      if (selectedInvestigationId === investigationId) renderModelProposals(investigationId);
+      setStatus(`Generating model proposals for investigation #${investigationId}…`);
+    });
+    backend.modelAnalysisCompleted.connect((investigationId, result) => {
+      activeModelInvestigationId = null;
+      modelAnalysisButton.disabled = false;
+      proposalViews.set(investigationId, result?.proposals ?? []);
+      if (selectedInvestigationId === investigationId) renderModelProposals(investigationId);
+      const count = result?.proposals?.length ?? 0;
+      setStatus(count ? `${count} model proposal(s) awaiting review.` : "Model analysis returned no proposals.");
+    });
+    backend.modelAnalysisFailed.connect((investigationId, _code, message) => {
+      activeModelInvestigationId = null;
+      modelAnalysisButton.disabled = false;
+      setStatus(message, true);
+      if (selectedInvestigationId === investigationId) renderModelProposals(investigationId);
+    });
   });
 }
 
 caseRightNode.addEventListener("change", renderRightSummary);
+modelAnalysisButton.addEventListener("click", requestModelAnalysis);
 
 nameForm.addEventListener("submit", (event) => {
   event.preventDefault();
