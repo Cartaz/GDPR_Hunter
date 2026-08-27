@@ -4,48 +4,25 @@ GDPR Hunter is a local-first desktop privacy application under active developmen
 
 ## Current status
 
-Milestone **M8 — Inference Foundation** is implemented on the current development branch. The codebase provides the desktop foundation, encrypted identity/artifact storage, Target Registry, GDPR Case workflow, deterministic rights/deadline logic, evidence-backed Investigations, deterministic Artifact analysis, guarded public-network research, non-blocking UI execution of that research, and a bounded OpenAI-compatible inference transport intended for local llama.cpp-style servers.
+Milestone **M9 — Typed Model Proposals** is implemented on the current development branch. The codebase provides the desktop foundation, encrypted identity/artifact storage, Target Registry, GDPR Case workflow, deterministic rights/deadline logic, evidence-backed Investigations, deterministic Artifact analysis, guarded public-network research, non-blocking UI execution of that research, bounded OpenAI-compatible inference transport, and a strict inert proposal schema for future model output.
 
-M6 established the guarded research foundation:
+M6 established guarded public-network research behind `NetworkPolicy` and explicit `EgressPolicy` approval. M7 moved that research onto an owned Qt worker without moving network rules into QWebChannel. M8 introduced a configured, bounded OpenAI-compatible inference transport without tools or canonical-state authority.
 
-- `NetworkPolicy` validation for outbound public HTTP(S) research;
-- rejection of localhost, private, link-local, reserved and otherwise non-public resolved IP addresses;
-- rejection of embedded URL credentials, non-HTTP(S) schemes and ports other than the scheme default (HTTP 80 / HTTPS 443);
-- DNS resolution before connection and transport pinning to the validated IP while retaining the original hostname/SNI for HTTPS;
-- manual redirect handling with full policy revalidation on every hop and a bounded redirect count;
-- bounded response size, short timeout, restricted textual/JSON content types, and no browser execution;
-- `ResearchService` helpers for public document fetch, public DNS resolution and IANA-bootstrap-based domain RDAP lookup;
-- explicit `EgressPolicy` authorization before research-capable operations;
-- encrypted storage of fetched public documents as reference Artifacts and `REMOTE_DOCUMENT` Evidence;
-- preservation of redirect observations and final URL as Evidence;
-- deterministic analysis of fetched reference documents after they are stored locally.
+M9 adds a deterministic boundary between untrusted model JSON and application behavior:
 
-M7 integrates that existing use case with the desktop application without moving networking into Qt or QWebChannel:
+- model output is accepted only as a top-level `proposals` list with a maximum of 20 entries;
+- supported proposal kinds are `CLAIM` and `RESEARCH_EVIDENCE` only;
+- Claim proposals require a bounded statement, one or more existing Evidence IDs, unique citations and confidence in the range 0–1;
+- Research proposals can reference only an existing Evidence ID plus a bounded rationale;
+- arbitrary URLs, commands, destinations, tool names and unknown fields are rejected rather than ignored;
+- every referenced Evidence ID must exist in the caller-provided investigation context;
+- parsed proposals are immutable dataclasses and are intentionally inert: parsing does not create Claims, mutate Investigation state or perform network access.
 
-- `ResearchRunner` owns a dedicated Qt worker thread for one bounded research operation at a time;
-- the worker invokes the normal Python `AppController` use case, so `InvestigationService`, `ResearchService`, `NetworkPolicy`, and `EgressPolicy` remain the single implementation of research rules;
-- QWebChannel exposes only the semantic `researchArtifactUrls` action, never arbitrary URL fetch or socket primitives;
-- the local UI requires an explicit confirmation before starting outbound research, and that approval value is passed through and validated by the Python bridge before the worker starts;
-- start, completion, and failure return through Qt signals while the GUI thread remains responsive;
-- application shutdown waits for the owned research worker within a bounded window instead of abandoning an unowned thread;
-- concurrent research starts are rejected while one operation is active.
-
-M8 introduces inference as a narrow transport capability rather than an autonomous agent:
-
-- `InferenceEndpoint` validates the configured HTTP(S) server and requires `LOCAL_PROCESS` endpoints to use loopback;
-- `USER_APPROVED_LAN` and `REMOTE` remain explicit location classes in settings rather than being inferred implicitly;
-- `InferenceService` calls the OpenAI-compatible `/v1/chat/completions` endpoint with a configured model;
-- requests are non-streaming and explicitly ask for a JSON object;
-- no tools, arbitrary commands, filesystem access, browser control, canonical-state mutation, or model-selected network destination are exposed;
-- response size and request timeout are bounded;
-- non-2xx, non-JSON, malformed OpenAI responses, and non-object assistant JSON are rejected;
-- `inference_model` joins endpoint/location in the Python-owned settings abstraction.
-
-M8 is deliberately a backend foundation. Inference is **not yet exposed through QWebChannel or used to create Claims/Research actions**. The next model-facing milestone must introduce a typed, deterministic proposal schema rather than a generic prompt bridge.
+Inference remains **not exposed through a generic QWebChannel prompt API**. The model has no direct filesystem, browser, networking or canonical-state mutation authority. A later application service may feed bounded Investigation context into inference and return these proposals for review, but proposal acceptance/execution must remain separate and deterministic.
 
 Research requests remain restricted to HTTP(S) URLs first extracted as deterministic Evidence from an Artifact. The UI cannot supply arbitrary destinations or privileged evidence provenance.
 
-Durable auditing of `EgressPolicy` decisions remains pending. It must be introduced before model-proposed outbound actions are executable, so user actions and model proposals share the same durable authorization trail.
+Durable auditing of `EgressPolicy` decisions remains pending. It must be introduced before model-proposed outbound actions become executable, so user actions and model proposals share the same durable authorization trail.
 
 The M5 `ArtifactAnalyzer` continues to cover SMS/text/company-response URLs, hosts and plausible telephone numbers; email sender-related headers/domains, Message-ID domain, DKIM `d=` domain and plain-text-body URLs; and URL artifacts. Parsing itself has no network authority.
 
@@ -71,7 +48,8 @@ Autonomous research planning, browser automation, exposure discovery, automated 
 - outbound research requires explicit `EgressPolicy` authorization
 - `ResearchRunner` owns Qt threading for research execution only; it contains no domain or network policy
 - `InferenceEndpoint` and `InferenceService` own configured model-server transport validation and bounded JSON inference
-- inference currently has no QWebChannel API and no authority over application state
+- `ModelProposalParser` is the strict boundary from untrusted model JSON to inert typed proposals
+- inference and proposals currently have no generic QWebChannel API and no authority over application state
 - the QWebChannel bridge exposes no network primitive and performs no blocking research
 - GDPR rights and deadline rules remain deterministic Python modules
 
@@ -98,4 +76,4 @@ chmod +x install.sh
 
 ## Security posture
 
-The application is designed around local-first processing, explicit outbound-data control, local-only WebEngine content, redacted diagnostics, encrypted sensitive persistence, append-only Case timelines, immutable Artifact metadata, evidence provenance, deterministic parsing without network authority, SSRF-resistant bounded research, owned asynchronous execution, bounded configured inference, and strict separation between LLM output and canonical application state.
+The application is designed around local-first processing, explicit outbound-data control, local-only WebEngine content, redacted diagnostics, encrypted sensitive persistence, append-only Case timelines, immutable Artifact metadata, evidence provenance, deterministic parsing without network authority, SSRF-resistant bounded research, owned asynchronous execution, bounded configured inference, strict model-output validation and separation between LLM proposals and canonical application state.
