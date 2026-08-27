@@ -4,31 +4,26 @@ GDPR Hunter is a local-first desktop privacy application under active developmen
 
 ## Current status
 
-Milestone **M10 — Durable Outbound Audit** is implemented on the current development branch. The codebase now includes encrypted identity/artifact storage, Target Registry, GDPR Case workflows, evidence-backed Investigations, deterministic Artifact analysis, guarded asynchronous public research, bounded OpenAI-compatible inference, strict inert model proposals, and a persistent authorization trail for outbound actions.
+Milestone **M11 — Reviewed Model Claims** is implemented on the current development branch. The codebase includes encrypted identity/artifact storage, GDPR Case workflows, evidence-backed Investigations, guarded asynchronous public research, bounded model inference, strict typed proposals, durable outbound auditing, and a reviewed path for converting a model Claim proposal into canonical state.
 
-M6 established guarded public-network research behind `NetworkPolicy` and explicit `EgressPolicy` approval. M7 moved that research onto an owned Qt worker. M8 added a bounded configured inference transport without tools or canonical-state authority. M9 introduced a strict parser that turns untrusted model JSON into immutable `CLAIM` or `RESEARCH_EVIDENCE` proposals referencing existing Evidence only.
+M8 introduced bounded OpenAI-compatible inference without tools or direct application authority. M9 added strict inert `CLAIM` and `RESEARCH_EVIDENCE` proposals. M10 added an encrypted append-only audit trail for outbound policy decisions.
 
-M10 makes outbound authorization auditable:
+M11 allows only reviewed Claim proposals to cross the model/canonical-state boundary:
 
-- SQLite schema version 5 adds `outbound_audit` through the normal `Database` migration path;
-- every production `EgressPolicy` decision is written by `OutboundAuditRepository`;
-- both `ALLOW` and `REQUIRE_APPROVAL` decisions are recorded;
-- intents identify their actor as `USER` or `MODEL`;
-- destination values are encrypted with the application `SensitiveStore` before persistence;
-- operation, data class, actor, approval state, decision and timestamp remain queryable audit metadata;
-- database triggers reject UPDATE and DELETE, making the audit table append-only through normal application access;
-- fresh databases create the v5 schema directly and existing v1–v4 databases migrate sequentially to v5;
-- test-only policies may omit an audit sink, while the production composition in `main.py` always wires the persistent repository.
+- the caller must provide an already typed `ClaimProposal` and explicit user approval;
+- without approval the operation fails before any mutation;
+- the claim is always persisted with provenance `MODEL_INFERENCE` and starts as `HYPOTHESIS`, regardless of model confidence;
+- every cited Evidence ID must belong to the target Investigation;
+- duplicate Evidence IDs and invalid confidence are rejected before persistence;
+- Claim creation and all `SUPPORTS` links are committed in one repository transaction;
+- if any cited Evidence is invalid, the entire operation rolls back and no partial Claim remains;
+- model research proposals remain inert and cannot use this acceptance path.
 
-Model proposals remain inert. No model proposal can currently mutate Investigation state or execute network access. Before any future model-proposed outbound action is executed, it must be converted into an `OutboundIntent`, pass the same `EgressPolicy` used for user actions, and therefore enter the same durable audit trail.
+`InvestigationService` remains the sole application owner of Investigation/Evidence/Claim mutations. The atomic repository operation hides persistence mechanics rather than leaking SQLite transactions into the application layer.
 
-Inference remains **not exposed through a generic QWebChannel prompt API**. The model has no direct filesystem, browser, networking or canonical-state mutation authority.
+Inference is still **not exposed through a generic QWebChannel prompt API**. The model has no direct filesystem, browser, networking or arbitrary canonical-state mutation authority. Research remains restricted to deterministic URL Evidence and outbound access remains subject to `EgressPolicy` and durable audit.
 
-Research requests remain restricted to HTTP(S) URLs first extracted as deterministic Evidence from an Artifact. The UI cannot supply arbitrary destinations or privileged evidence provenance.
-
-Supported GDPR Case workflows are Article 15 access/provenance, Article 17 erasure and Article 21(2)-(3) direct-marketing objection. Deadline calculations use calendar months and support injected public holidays; automatic jurisdiction-specific holiday resolution is still planned.
-
-Autonomous research planning, browser automation, exposure discovery, automated request delivery, monitoring and escalation are **not implemented yet**.
+Supported GDPR Case workflows are Article 15 access/provenance, Article 17 erasure and Article 21(2)-(3) direct-marketing objection. Automatic jurisdiction-specific holiday resolution, model orchestration, exposure discovery, automated delivery, monitoring and escalation remain future work.
 
 ## Architecture
 
@@ -39,15 +34,15 @@ Autonomous research planning, browser automation, exposure discovery, automated 
 - SQLite for operational persistence and append-only outbound audit
 - Python owns canonical state and business logic
 - Sensitive personal/investigative data and audit destinations are encrypted before persistence
-- Raw and fetched Artifact bytes are stored encrypted outside SQLite behind `ArtifactStore`
 - `InvestigationService` is the sole application owner of Investigation/Evidence/Claim mutations
+- `InvestigationRepository` provides atomic persistence operations for aggregate changes
 - `ArtifactAnalyzer` is deterministic and has no network authority
 - `ResearchService` owns bounded public-network mechanics behind `NetworkPolicy`
 - `EgressPolicy` owns authorization; `OutboundAuditRepository` owns durable audit persistence
 - `ResearchRunner` owns Qt threading for research execution only
-- `InferenceEndpoint` and `InferenceService` own configured model-server transport validation and bounded JSON inference
+- `InferenceEndpoint` and `InferenceService` own configured model-server transport and bounded JSON inference
 - `ModelProposalParser` is the strict boundary from untrusted model JSON to inert typed proposals
-- inference and proposals have no generic QWebChannel API and no authority over application state
+- reviewed Claim acceptance is explicit and separate from proposal generation
 
 ## Install
 
@@ -72,4 +67,4 @@ chmod +x install.sh
 
 ## Security posture
 
-The application is designed around local-first processing, explicit outbound-data control, local-only WebEngine content, redacted diagnostics, encrypted sensitive persistence, append-only Case and outbound-audit records, immutable Artifact metadata, evidence provenance, deterministic parsing without network authority, SSRF-resistant bounded research, owned asynchronous execution, bounded configured inference, strict model-output validation and separation between LLM proposals and canonical application state.
+The application is designed around local-first processing, explicit outbound-data control, encrypted sensitive persistence, append-only audit records, immutable Artifact metadata, evidence provenance, deterministic parsing, SSRF-resistant bounded research, owned asynchronous execution, bounded inference, strict model-output validation, explicit review gates and separation between LLM proposals and canonical application state.
