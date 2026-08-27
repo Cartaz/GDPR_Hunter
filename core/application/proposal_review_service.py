@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 from core.application.investigation_service import InvestigationService
 from core.domain.investigation import Claim
-from core.domain.model_proposal import ClaimProposal, ModelProposal, ResearchEvidenceProposal
+from core.domain.model_proposal import ClaimProposal, ModelProposal
 
 
 @dataclass(frozen=True, slots=True)
@@ -23,7 +23,11 @@ class ProposalReviewService:
         self._proposals: dict[str, ReviewProposal] = {}
         self._tokens_by_investigation: dict[int, set[str]] = {}
 
-    def register(self, investigation_id: int, proposals: tuple[ModelProposal, ...]) -> tuple[ReviewProposal, ...]:
+    def register(
+        self,
+        investigation_id: int,
+        proposals: tuple[ModelProposal, ...],
+    ) -> tuple[ReviewProposal, ...]:
         if investigation_id <= 0:
             raise ValueError("Investigation id must be positive")
         self._invalidate_investigation(investigation_id)
