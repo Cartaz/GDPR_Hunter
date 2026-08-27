@@ -4,28 +4,26 @@ GDPR Hunter is a local-first desktop privacy application under active developmen
 
 ## Current status
 
-Milestone **M13 — Async Model Analysis Integration** is implemented on the current development branch. The application now composes the configured inference endpoint/model at startup and can execute M12 Evidence-to-proposal analysis on an owned Qt worker rather than the GUI thread.
+Milestone **M14 — Python-owned Proposal Review** is implemented on the current development branch. Model analysis now produces reviewable UI proposals whose authoritative payload remains owned by Python. The web frontend receives only display data plus an opaque token and can accept or discard a proposal only by returning that token.
 
-M8 introduced bounded OpenAI-compatible inference without tools or direct application authority. M9 added strict inert `CLAIM` and `RESEARCH_EVIDENCE` proposals. M10 added encrypted append-only outbound auditing. M11 added explicitly reviewed, atomic Claim acceptance. M12 connected bounded Investigation Evidence to inference and strict proposal parsing without mutation.
+M8 introduced bounded OpenAI-compatible inference without tools or direct application authority. M9 added strict inert `CLAIM` and `RESEARCH_EVIDENCE` proposals. M10 added encrypted append-only outbound auditing. M11 added explicitly reviewed, atomic Claim acceptance. M12 connected bounded Investigation Evidence to inference and strict proposal parsing without mutation. M13 moved model analysis onto an owned Qt worker and wired configured inference into production.
 
-M13 adds the native asynchronous integration while preserving those boundaries:
+M14 closes the review loop without trusting JavaScript as a proposal source:
 
-- settings provide the inference endpoint, location classification and model to Python startup composition;
-- `InferenceEndpoint`, `InferenceService`, `ModelAnalysisService` and the durable `EgressPolicy` are wired in Python, not JavaScript;
-- `ModelAnalysisRunner` owns a dedicated `QThread` and prevents concurrent model-analysis jobs;
-- the runner has bounded, idempotent shutdown and is cleaned up during application shutdown;
-- QWebChannel exposes only the semantic operation `analyzeInvestigationWithModel(investigation_id, approved_by_user)`;
-- JavaScript cannot provide a prompt, model, endpoint, URL, command or tool name;
-- explicit approval is required before a model-analysis worker is started;
-- typed proposals are serialized to simple read-only DTOs and delivered through Qt signals;
-- proposal generation still performs no canonical-state mutation and no research execution;
-- existing bridge users remain compatible when model analysis is not configured.
+- `ProposalReviewService` is the single owner of generated, ephemeral model proposals;
+- each generated proposal receives a cryptographically random opaque token;
+- a new analysis invalidates previous tokens for the same Investigation;
+- JavaScript receives proposal display fields and the opaque token, but cannot submit statement, confidence or Evidence IDs for acceptance;
+- `acceptModelClaim(token, approved_by_user)` resolves the original Python-owned proposal before invoking the M11 atomic acceptance path;
+- successful Claim acceptance consumes the token, so replay is rejected;
+- denied approval, forged tokens and expired tokens do not mutate canonical state;
+- `RESEARCH_EVIDENCE` proposals cannot be accepted as Claims;
+- proposals can be explicitly discarded, which also consumes their token;
+- the frontend now exposes asynchronous model analysis and review controls while retaining only temporary presentation state.
 
-M13 intentionally does **not** add proposal-acceptance controls to the web frontend. A later review workflow must not accept a fabricated JavaScript proposal payload; it should refer to Python-owned generated proposals by an opaque identity before allowing M11 Claim acceptance.
+`InvestigationService` remains the sole owner of Investigation/Evidence/Claim mutations. `ProposalReviewService` owns only ephemeral proposal identity and review resolution. Research and inference both require `EgressPolicy` authorization and enter the durable outbound audit. The model has no filesystem, browser, arbitrary networking, command execution or generic canonical-state authority.
 
-`InvestigationService` remains the sole owner of Investigation/Evidence/Claim mutations. Research and inference both require `EgressPolicy` authorization and enter the durable outbound audit. The model has no filesystem, browser, arbitrary networking, command execution or generic canonical-state authority.
-
-Supported GDPR Case workflows are Article 15 access/provenance, Article 17 erasure and Article 21(2)-(3) direct-marketing objection. Automatic jurisdiction-specific holiday resolution, proposal-review UI, reviewed research-proposal execution, exposure discovery, automated delivery, monitoring and escalation remain future work.
+Supported GDPR Case workflows are Article 15 access/provenance, Article 17 erasure and Article 21(2)-(3) direct-marketing objection. Automatic jurisdiction-specific holiday resolution, reviewed research-proposal execution, exposure discovery, automated delivery, monitoring and escalation remain future work.
 
 ## Architecture
 
@@ -46,6 +44,7 @@ Supported GDPR Case workflows are Article 15 access/provenance, Article 17 erasu
 - `ModelProposalParser` validates untrusted model JSON into inert typed proposals
 - `ModelAnalysisService` owns bounded Evidence-to-proposal orchestration without mutation
 - `ModelAnalysisRunner` owns Qt threading for that orchestration
+- `ProposalReviewService` owns opaque proposal identities and one-use review resolution
 - reviewed Claim acceptance remains explicit and separate from proposal generation
 
 ## Install
@@ -71,4 +70,4 @@ chmod +x install.sh
 
 ## Security posture
 
-The application is designed around local-first processing, explicit outbound-data control, encrypted sensitive persistence, append-only audit records, immutable Artifact metadata, evidence provenance, deterministic parsing, SSRF-resistant bounded research, owned asynchronous execution, bounded inference/context, strict model-output validation, explicit review gates and separation between LLM proposals and canonical application state.
+The application is designed around local-first processing, explicit outbound-data control, encrypted sensitive persistence, append-only audit records, immutable Artifact metadata, evidence provenance, deterministic parsing, SSRF-resistant bounded research, owned asynchronous execution, bounded inference/context, strict model-output validation, opaque one-use proposal identities, explicit review gates and separation between LLM proposals and canonical application state.
