@@ -5,6 +5,7 @@ ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT_DIR"
 
 PYTHON_BIN="${PYTHON_BIN:-python3}"
+VENV_DIR="$ROOT_DIR/.venv"
 
 if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
     printf 'Error: %s was not found in PATH.\n' "$PYTHON_BIN" >&2
@@ -20,15 +21,26 @@ then
     exit 1
 fi
 
-if [[ ! -x .venv/bin/python ]]; then
-    rm -rf .venv
-    "$PYTHON_BIN" -m venv .venv
+venv_is_usable=false
+if [[ -x "$VENV_DIR/bin/python" ]]; then
+    if "$VENV_DIR/bin/python" - <<'PY' >/dev/null 2>&1
+import sys
+raise SystemExit(0 if sys.version_info >= (3, 12) else 1)
+PY
+    then
+        venv_is_usable=true
+    fi
 fi
 
-.venv/bin/python -m pip install --upgrade pip
-.venv/bin/python -m pip install -r requirements.txt -r requirements-dev.txt
+if [[ "$venv_is_usable" != true ]]; then
+    rm -rf -- "$VENV_DIR"
+    "$PYTHON_BIN" -m venv "$VENV_DIR"
+fi
 
-.venv/bin/python - <<'PY'
+"$VENV_DIR/bin/python" -m pip install --upgrade pip
+"$VENV_DIR/bin/python" -m pip install -r requirements.txt -r requirements-dev.txt
+
+"$VENV_DIR/bin/python" - <<'PY'
 import cryptography
 import keyring
 from PySide6 import QtCore, QtWebChannel, QtWebEngineWidgets
