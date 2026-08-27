@@ -36,44 +36,32 @@ jobs:
       - name: Compile
         run: .venv/bin/python -m compileall -q main.py config core ui tests
 
-      - name: Ruff proposal E5
-        continue-on-error: true
-        run: .venv/bin/ruff check core/application/proposal_review_service.py --select E5
+      - name: Diagnose Ruff
+        id: ruffdiag
+        shell: bash
+        run: |
+          set +e
+          .venv/bin/ruff check main.py config core ui tests --output-format=json > /tmp/ruff.json
+          .venv/bin/python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          from pathlib import Path
 
-      - name: Ruff proposal W
-        continue-on-error: true
-        run: .venv/bin/ruff check core/application/proposal_review_service.py --select W
+          findings = json.loads(Path("/tmp/ruff.json").read_text())
+          if findings:
+              first = findings[0]
+              print(f"code={first['code']}")
+              print(f"file={Path(first['filename']).name}")
+              print(f"line={first['location']['row']}")
+          else:
+              print("code=clean")
+              print("file=none")
+              print("line=0")
+          PY
 
-      - name: Ruff proposal UP
-        continue-on-error: true
-        run: .venv/bin/ruff check core/application/proposal_review_service.py --select UP
-
-      - name: Ruff proposal B
-        continue-on-error: true
-        run: .venv/bin/ruff check core/application/proposal_review_service.py --select B
-
-      - name: Ruff proposal SIM
-        continue-on-error: true
-        run: .venv/bin/ruff check core/application/proposal_review_service.py --select SIM
-
-      - name: Ruff proposal RUF
-        continue-on-error: true
-        run: .venv/bin/ruff check core/application/proposal_review_service.py --select RUF
-
-      - name: Ruff proposal PTH
-        continue-on-error: true
-        run: .venv/bin/ruff check core/application/proposal_review_service.py --select PTH
-
-      - name: Ruff proposal PL
-        continue-on-error: true
-        run: .venv/bin/ruff check core/application/proposal_review_service.py --select PL
-
-      - name: Ruff proposal PERF
-        continue-on-error: true
-        run: .venv/bin/ruff check core/application/proposal_review_service.py --select PERF
-
-      - name: Ruff remaining
-        run: .venv/bin/ruff check main.py config core ui tests --exclude core/application/proposal_review_service.py
+      - name: Ruff ${{ steps.ruffdiag.outputs.code }} ${{ steps.ruffdiag.outputs.file }} line ${{ steps.ruffdiag.outputs.line }}
+        if: steps.ruffdiag.outputs.code != 'clean'
+        run: exit 1
 
       - name: Pytest
+        if: steps.ruffdiag.outputs.code == 'clean'
         run: .venv/bin/python -m pytest
