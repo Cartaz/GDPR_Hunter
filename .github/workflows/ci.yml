@@ -36,37 +36,8 @@ jobs:
       - name: Compile
         run: .venv/bin/python -m compileall -q main.py config core ui tests
 
-      - name: Ruff main
-        run: .venv/bin/ruff check main.py
-
-      - name: Ruff bridge
-        run: .venv/bin/ruff check ui/bridge.py
-
-      - name: Ruff model runner
-        run: .venv/bin/ruff check ui/model_analysis_runner.py
-
-      - name: Ruff M13 F
-        continue-on-error: true
-        run: .venv/bin/ruff check tests/test_m13_async_model_analysis.py --select F
-
-      - name: Ruff M13 E4
-        continue-on-error: true
-        run: .venv/bin/ruff check tests/test_m13_async_model_analysis.py --select E4
-
-      - name: Ruff M13 E7
-        continue-on-error: true
-        run: .venv/bin/ruff check tests/test_m13_async_model_analysis.py --select E7
-
-      - name: Ruff M13 E9
-        continue-on-error: true
-        run: .venv/bin/ruff check tests/test_m13_async_model_analysis.py --select E9
-
-      - name: Ruff M13 I
-        continue-on-error: true
-        run: .venv/bin/ruff check tests/test_m13_async_model_analysis.py --select I
-
-      - name: Ruff remaining
-        run: .venv/bin/ruff check config core ui/research_runner.py ui/window.py tests --exclude tests/test_m13_async_model_analysis.py
+      - name: Ruff
+        run: .venv/bin/ruff check main.py config core ui tests
 
       - name: Pytest
         run: .venv/bin/python -m pytest
