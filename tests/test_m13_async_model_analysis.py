@@ -3,7 +3,7 @@ from __future__ import annotations
 import threading
 import time
 
-from PySide6.QtCore import QCoreApplication
+from PySide6.QtCore import QCoreApplication, QObject, Signal
 from PySide6.QtTest import QSignalSpy
 
 from core.domain.model_proposal import ClaimProposal, ResearchEvidenceProposal
@@ -31,14 +31,10 @@ class FakeController:
         return {"milestone": "M13"}
 
 
-class FakeResearchRunner:
-    pass
-
-
-class BusyModelRunner:
-    analysisStarted = type("SignalStub", (), {"connect": lambda self, _slot: None})()
-    analysisSucceeded = type("SignalStub", (), {"connect": lambda self, _slot: None})()
-    analysisFailed = type("SignalStub", (), {"connect": lambda self, _slot: None})()
+class BusyModelRunner(QObject):
+    analysisStarted = Signal(int)
+    analysisSucceeded = Signal(int, object)
+    analysisFailed = Signal(int, str, str)
 
     def start(self, _investigation_id: int, *, approved_by_user: bool) -> bool:
         assert approved_by_user is True
@@ -96,12 +92,15 @@ def test_bridge_rejects_unapproved_or_busy_model_analysis() -> None:
 
 
 def test_bridge_serializes_typed_model_proposals_without_mutation() -> None:
+    application = QCoreApplication.instance() or QCoreApplication([])
+    assert application is not None
     controller = FakeController()
     research_runner = ResearchRunner(controller)  # type: ignore[arg-type]
     bridge = Bridge(controller, research_runner)  # type: ignore[arg-type]
     completed = QSignalSpy(bridge.modelAnalysisCompleted)
 
-    bridge._model_analysis_succeeded(  # noqa: SLF001 - bridge signal serialization boundary test
+    relay = getattr(bridge, "_model_analysis_succeeded")
+    relay(
         7,
         (
             ClaimProposal("Example Ltd may control the campaign", (1, 2), 0.8),
