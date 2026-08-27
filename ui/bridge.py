@@ -150,7 +150,7 @@ class Bridge(QObject):
             return self._fail("CAPABILITY_UNAVAILABLE", "Model proposal review is not configured")
         try:
             claim = review_service.accept_claim(proposal_token, approved_by_user=True)
-        except (ValueError, LookupError) as exc:
+        except (TypeError, ValueError, LookupError) as exc:
             return self._fail("INVALID_INPUT", str(exc))
         self.stateChanged.emit(self._controller.get_bootstrap_state())
         return {"ok": True, "result": self._claim_dto(claim)}
