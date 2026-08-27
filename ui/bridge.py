@@ -5,6 +5,8 @@ import logging
 from PySide6.QtCore import QObject, Signal, Slot
 
 from core.application.app_controller import AppController
+from core.domain.model_proposal import ClaimProposal, ResearchEvidenceProposal
+from ui.model_analysis_runner import ModelAnalysisRunner
 from ui.research_runner import ResearchRunner
 
 _LOG = logging.getLogger(__name__)
@@ -16,14 +18,26 @@ class Bridge(QObject):
     researchStarted = Signal(int, int)
     researchCompleted = Signal(int, int, object)
     researchFailed = Signal(int, int, str, str)
+    modelAnalysisStarted = Signal(int)
+    modelAnalysisCompleted = Signal(int, object)
+    modelAnalysisFailed = Signal(int, str, str)
 
-    def __init__(self, controller: AppController, research_runner: ResearchRunner) -> None:
+    def __init__(
+        self,
+        controller: AppController,
+        research_runner: ResearchRunner,
+        model_analysis_runner: ModelAnalysisRunner,
+    ) -> None:
         super().__init__()
         self._controller = controller
         self._research_runner = research_runner
+        self._model_analysis_runner = model_analysis_runner
         research_runner.researchStarted.connect(self.researchStarted)
         research_runner.researchSucceeded.connect(self._research_succeeded)
         research_runner.researchFailed.connect(self._research_failed)
+        model_analysis_runner.analysisStarted.connect(self.modelAnalysisStarted)
+        model_analysis_runner.analysisSucceeded.connect(self._model_analysis_succeeded)
+        model_analysis_runner.analysisFailed.connect(self._model_analysis_failed)
 
     @Slot(result="QVariant")
     def getBootstrapState(self) -> dict[str, object]:
@@ -102,6 +116,26 @@ class Bridge(QObject):
             return self._fail("BUSY", "Another research operation is already running")
         return {"ok": True}
 
+    @Slot(int, bool, result="QVariant")
+    def analyzeInvestigationWithModel(
+        self,
+        investigation_id: int,
+        approved_by_user: bool,
+    ) -> dict[str, object]:
+        if investigation_id <= 0:
+            return self._fail("INVALID_INPUT", "Investigation id must be positive")
+        if not approved_by_user:
+            return self._fail(
+                "APPROVAL_REQUIRED",
+                "Model analysis requires explicit approval to send Investigation Evidence to the configured inference endpoint",
+            )
+        if not self._model_analysis_runner.start(
+            investigation_id,
+            approved_by_user=approved_by_user,
+        ):
+            return self._fail("BUSY", "Another model analysis is already running")
+        return {"ok": True}
+
     @Slot(int, int, str, str, result="QVariant")
     def addUserEvidence(
         self,
@@ -148,6 +182,42 @@ class Bridge(QObject):
         _LOG.warning("Asynchronous research failed: code=%s", code)
         self.researchFailed.emit(investigation_id, artifact_id, code, message)
         self.operationFailed.emit(code, message)
+
+    @Slot(int, object)
+    def _model_analysis_succeeded(self, investigation_id: int, result: object) -> None:
+        proposals = [self._proposal_dto(item) for item in result]
+        self.modelAnalysisCompleted.emit(
+            investigation_id,
+            {"proposals": proposals},
+        )
+
+    @Slot(int, str, str)
+    def _model_analysis_failed(
+        self,
+        investigation_id: int,
+        code: str,
+        message: str,
+    ) -> None:
+        _LOG.warning("Asynchronous model analysis failed: code=%s", code)
+        self.modelAnalysisFailed.emit(investigation_id, code, message)
+        self.operationFailed.emit(code, message)
+
+    @staticmethod
+    def _proposal_dto(proposal: object) -> dict[str, object]:
+        if isinstance(proposal, ClaimProposal):
+            return {
+                "kind": "CLAIM",
+                "statement": proposal.statement,
+                "evidenceIds": list(proposal.evidence_ids),
+                "confidence": proposal.confidence,
+            }
+        if isinstance(proposal, ResearchEvidenceProposal):
+            return {
+                "kind": "RESEARCH_EVIDENCE",
+                "evidenceId": proposal.evidence_id,
+                "rationale": proposal.rationale,
+            }
+        raise TypeError("Unsupported model proposal type")
 
     def _read(self, operation):
         try:
