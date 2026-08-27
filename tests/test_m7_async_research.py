@@ -36,7 +36,8 @@ def test_research_runner_executes_use_case_off_calling_thread_and_returns_signal
 
     try:
         assert runner.start(7, 11, approved_by_user=True) is True
-        assert succeeded.wait(2_000)
+        if succeeded.count() == 0:
+            assert succeeded.wait(2_000)
 
         assert controller.worker_thread_id is not None
         assert controller.worker_thread_id != caller_thread_id
