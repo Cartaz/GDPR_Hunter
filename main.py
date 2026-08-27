@@ -25,6 +25,7 @@ from core.storage.case_repository import CaseRepository
 from core.storage.database import Database
 from core.storage.identity_repository import IdentityRepository
 from core.storage.investigation_repository import InvestigationRepository
+from core.storage.outbound_audit_repository import OutboundAuditRepository
 from core.storage.secret_store import SecretStore, SecretStoreUnavailable
 from core.storage.sensitive_store import SensitiveStore
 from core.storage.target_repository import TargetRepository
@@ -64,13 +65,14 @@ def build_controller() -> tuple[AppController, SettingsStore]:
     )
     network_policy = NetworkPolicy()
     research_service = ResearchService(network_policy)
+    egress_policy = EgressPolicy(OutboundAuditRepository(database, sensitive_store))
     investigation_service = InvestigationService(
         InvestigationRepository(database, sensitive_store),
         ArtifactStore(paths.artifacts_dir, sensitive_store),
         identity_service,
         ArtifactAnalyzer(),
         research_service,
-        EgressPolicy(),
+        egress_policy,
     )
     return (
         AppController(identity_service, target_service, case_service, investigation_service),
