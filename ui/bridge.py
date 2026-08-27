@@ -26,7 +26,7 @@ class Bridge(QObject):
         self,
         controller: AppController,
         research_runner: ResearchRunner,
-        model_analysis_runner: ModelAnalysisRunner,
+        model_analysis_runner: ModelAnalysisRunner | None = None,
     ) -> None:
         super().__init__()
         self._controller = controller
@@ -35,9 +35,10 @@ class Bridge(QObject):
         research_runner.researchStarted.connect(self.researchStarted)
         research_runner.researchSucceeded.connect(self._research_succeeded)
         research_runner.researchFailed.connect(self._research_failed)
-        model_analysis_runner.analysisStarted.connect(self.modelAnalysisStarted)
-        model_analysis_runner.analysisSucceeded.connect(self._model_analysis_succeeded)
-        model_analysis_runner.analysisFailed.connect(self._model_analysis_failed)
+        if model_analysis_runner is not None:
+            model_analysis_runner.analysisStarted.connect(self.modelAnalysisStarted)
+            model_analysis_runner.analysisSucceeded.connect(self._model_analysis_succeeded)
+            model_analysis_runner.analysisFailed.connect(self._model_analysis_failed)
 
     @Slot(result="QVariant")
     def getBootstrapState(self) -> dict[str, object]:
@@ -67,7 +68,7 @@ class Bridge(QObject):
 
     @Slot(int, str, result="QVariant")
     def recordCaseExtension(self, case_id: int, notified_on: str) -> dict[str, object]:
-        return self._mutate(lambda: self._controller.record_case_extension(case_id, notified_on))
+        return self._mutate(lambda: self._controller.record_extension(case_id, notified_on))
 
     @Slot(int, str, result="QVariant")
     def transitionCase(self, case_id: int, target_status: str) -> dict[str, object]:
@@ -129,10 +130,10 @@ class Bridge(QObject):
                 "APPROVAL_REQUIRED",
                 "Model analysis requires explicit approval to send Investigation Evidence to the configured inference endpoint",
             )
-        if not self._model_analysis_runner.start(
-            investigation_id,
-            approved_by_user=approved_by_user,
-        ):
+        runner = self._model_analysis_runner
+        if runner is None:
+            return self._fail("CAPABILITY_UNAVAILABLE", "Model analysis is not configured")
+        if not runner.start(investigation_id, approved_by_user=approved_by_user):
             return self._fail("BUSY", "Another model analysis is already running")
         return {"ok": True}
 
@@ -186,10 +187,7 @@ class Bridge(QObject):
     @Slot(int, object)
     def _model_analysis_succeeded(self, investigation_id: int, result: object) -> None:
         proposals = [self._proposal_dto(item) for item in result]
-        self.modelAnalysisCompleted.emit(
-            investigation_id,
-            {"proposals": proposals},
-        )
+        self.modelAnalysisCompleted.emit(investigation_id, {"proposals": proposals})
 
     @Slot(int, str, str)
     def _model_analysis_failed(
