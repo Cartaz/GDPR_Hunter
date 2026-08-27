@@ -36,54 +36,8 @@ jobs:
       - name: Compile
         run: .venv/bin/python -m compileall -q main.py config core ui tests
 
-      - name: Diagnose Ruff
-        id: ruffdiag
-        shell: bash
-        run: |
-          set +e
-          .venv/bin/ruff check main.py config core ui tests --output-format=json > /tmp/ruff.json
-          .venv/bin/python - <<'PY' >> "$GITHUB_OUTPUT"
-          import json
-          from pathlib import Path
+      - name: Ruff
+        run: .venv/bin/ruff check main.py config core ui tests
 
-          findings = json.loads(Path("/tmp/ruff.json").read_text())
-          if findings:
-              first = findings[0]
-              print(f"code={first['code']}")
-              print(f"file={Path(first['filename']).name}")
-              print(f"line={first['location']['row']}")
-          else:
-              print("code=clean")
-              print("file=none")
-              print("line=0")
-          PY
-
-      - name: Ruff ${{ steps.ruffdiag.outputs.code }} ${{ steps.ruffdiag.outputs.file }} line ${{ steps.ruffdiag.outputs.line }}
-        if: steps.ruffdiag.outputs.code != 'clean'
-        run: exit 1
-
-      - name: Diagnose Pytest
-        id: pytestdiag
-        if: steps.ruffdiag.outputs.code == 'clean'
-        shell: bash
-        run: |
-          set +e
-          .venv/bin/python -m pytest -q > /tmp/pytest.txt 2>&1
-          status=$?
-          .venv/bin/python - <<'PY' >> "$GITHUB_OUTPUT"
-          import re
-          from pathlib import Path
-
-          output = Path("/tmp/pytest.txt").read_text()
-          matches = re.findall(r"^FAILED\s+([^\s]+)", output, flags=re.MULTILINE)
-          if matches:
-              node = matches[0].replace("::", "__")
-              print(f"node={node}")
-          else:
-              print("node=clean")
-          PY
-          exit 0
-
-      - name: Pytest ${{ steps.pytestdiag.outputs.node }}
-        if: steps.pytestdiag.outputs.node != 'clean'
-        run: exit 1
+      - name: Pytest
+        run: .venv/bin/python -m pytest
