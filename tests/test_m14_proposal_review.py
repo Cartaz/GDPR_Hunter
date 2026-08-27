@@ -133,7 +133,7 @@ def test_research_proposal_cannot_be_accepted_as_claim(tmp_path) -> None:
         (ResearchEvidenceProposal(evidence.id, "Research this evidence"),),
     )
 
-    with pytest.raises(ValueError, match="Only claim proposals"):
+    with pytest.raises(TypeError, match="Only claim proposals"):
         review.accept_claim(registered[0].token, approved_by_user=True)
     assert investigation_service.list_claims(investigation.id) == []
 
