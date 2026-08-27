@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from http.client import HTTPConnection, HTTPSConnection, HTTPException
+from http.client import HTTPConnection, HTTPException, HTTPSConnection
 from typing import Any
 
 from core.application.inference_endpoint import InferenceEndpoint
