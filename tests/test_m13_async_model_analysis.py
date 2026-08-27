@@ -6,6 +6,7 @@ import time
 from PySide6.QtCore import QCoreApplication, QObject, Signal
 from PySide6.QtTest import QSignalSpy
 
+from core.application.proposal_review_service import ReviewProposal
 from core.domain.model_proposal import ClaimProposal, ResearchEvidenceProposal
 from ui.bridge import Bridge
 from ui.model_analysis_runner import ModelAnalysisRunner
@@ -49,6 +50,14 @@ class SignalModelRunner(QObject):
     def start(self, _investigation_id: int, *, approved_by_user: bool) -> bool:
         assert approved_by_user is True
         return True
+
+
+class FakeReviewService:
+    def register(self, investigation_id: int, proposals):
+        return tuple(
+            ReviewProposal(f"token-{index}", investigation_id, proposal)
+            for index, proposal in enumerate(proposals, start=1)
+        )
 
 
 def test_model_analysis_runner_executes_off_calling_thread_and_returns_proposals() -> None:
@@ -95,13 +104,14 @@ def test_bridge_rejects_unapproved_or_busy_model_analysis() -> None:
         controller,
         research_runner,
         BusyModelRunner(),  # type: ignore[arg-type]
+        FakeReviewService(),  # type: ignore[arg-type]
     )
     busy = bridge_busy.analyzeInvestigationWithModel(7, True)
     assert busy["ok"] is False
     assert busy["error"]["code"] == "BUSY"
 
 
-def test_bridge_serializes_typed_model_proposals_without_mutation() -> None:
+def test_bridge_serializes_registered_model_proposals_without_mutation() -> None:
     application = QCoreApplication.instance() or QCoreApplication([])
     assert application is not None
     controller = FakeController()
@@ -111,6 +121,7 @@ def test_bridge_serializes_typed_model_proposals_without_mutation() -> None:
         controller,
         research_runner,
         model_runner,  # type: ignore[arg-type]
+        FakeReviewService(),  # type: ignore[arg-type]
     )
     completed = QSignalSpy(bridge.modelAnalysisCompleted)
 
@@ -128,12 +139,14 @@ def test_bridge_serializes_typed_model_proposals_without_mutation() -> None:
     proposals = arguments[1]["proposals"]
     assert proposals == [
         {
+            "token": "token-1",
             "kind": "CLAIM",
             "statement": "Example Ltd may control the campaign",
             "evidenceIds": [1, 2],
             "confidence": 0.8,
         },
         {
+            "token": "token-2",
             "kind": "RESEARCH_EVIDENCE",
             "evidenceId": 2,
             "rationale": "Review evidence two.",
