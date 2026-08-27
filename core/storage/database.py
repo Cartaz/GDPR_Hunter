@@ -17,7 +17,7 @@ class UnsupportedSchemaVersion(DatabaseSchemaError):
 class Database:
     """Own SQLite connection setup, lifecycle, schema compatibility, migrations, and transactions."""
 
-    CURRENT_SCHEMA_VERSION = 4
+    CURRENT_SCHEMA_VERSION = 5
 
     def __init__(self, path: Path) -> None:
         self._path = path
@@ -108,6 +108,7 @@ class Database:
             self._create_targets_schema(connection)
             self._create_case_schema_v3(connection)
             self._create_investigation_schema_v4(connection)
+            self._create_outbound_audit_schema_v5(connection)
             connection.execute(
                 """
                 INSERT INTO schema_meta(id, schema_version, created_at, last_migrated_at)
@@ -130,6 +131,11 @@ class Database:
                 self._create_investigation_schema_v4(connection)
                 self._set_schema_version(connection, expected=3, target=4)
             return 4
+        if from_version == 4:
+            with connection:
+                self._create_outbound_audit_schema_v5(connection)
+                self._set_schema_version(connection, expected=4, target=5)
+            return 5
         raise UnsupportedSchemaVersion(f"No migration path from database schema version {from_version}")
 
     @staticmethod
@@ -357,6 +363,40 @@ class Database:
             BEFORE UPDATE ON artifacts
             BEGIN
                 SELECT RAISE(ABORT, 'artifact metadata is immutable');
+            END
+            """,
+        )
+        for statement in statements:
+            connection.execute(statement)
+
+    @staticmethod
+    def _create_outbound_audit_schema_v5(connection: sqlite3.Connection) -> None:
+        statements = (
+            """
+            CREATE TABLE outbound_audit (
+                id INTEGER PRIMARY KEY,
+                operation TEXT NOT NULL,
+                destination_enc BLOB NOT NULL,
+                data_class TEXT NOT NULL,
+                actor TEXT NOT NULL CHECK (actor IN ('USER', 'MODEL')),
+                approved_by_user INTEGER NOT NULL CHECK (approved_by_user IN (0, 1)),
+                decision TEXT NOT NULL CHECK (decision IN ('ALLOW', 'REQUIRE_APPROVAL')),
+                created_at TEXT NOT NULL
+            )
+            """,
+            "CREATE INDEX idx_outbound_audit_created_at ON outbound_audit(created_at, id)",
+            """
+            CREATE TRIGGER outbound_audit_no_update
+            BEFORE UPDATE ON outbound_audit
+            BEGIN
+                SELECT RAISE(ABORT, 'outbound audit is append-only');
+            END
+            """,
+            """
+            CREATE TRIGGER outbound_audit_no_delete
+            BEFORE DELETE ON outbound_audit
+            BEGIN
+                SELECT RAISE(ABORT, 'outbound audit is append-only');
             END
             """,
         )

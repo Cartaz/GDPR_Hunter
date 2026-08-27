@@ -72,7 +72,7 @@ def test_v1_database_is_migrated_without_losing_existing_rows(tmp_path):
     database.initialize()
 
     with database.connection_scope() as migrated:
-        assert migrated.execute("SELECT schema_version FROM schema_meta WHERE id = 1").fetchone()[0] == 4
+        assert migrated.execute("SELECT schema_version FROM schema_meta WHERE id = 1").fetchone()[0] == 5
         assert migrated.execute("SELECT COUNT(*) FROM identities").fetchone()[0] == 1
         assert migrated.execute(
             "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN ('targets', 'cases', 'case_events')"
@@ -80,6 +80,9 @@ def test_v1_database_is_migrated_without_losing_existing_rows(tmp_path):
         assert migrated.execute(
             "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN ('investigations', 'artifacts', 'evidence', 'claims')"
         ).fetchone()[0] == 4
+        assert migrated.execute(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'outbound_audit'"
+        ).fetchone()[0] == 1
 
 
 def test_v2_open_case_migrates_to_awaiting_response_without_data_loss(tmp_path):
@@ -160,7 +163,7 @@ def test_v2_open_case_migrates_to_awaiting_response_without_data_loss(tmp_path):
         event = migrated.execute(
             "SELECT from_status, to_status FROM case_events WHERE id = 1"
         ).fetchone()
-        assert migrated.execute("SELECT schema_version FROM schema_meta WHERE id = 1").fetchone()[0] == 4
+        assert migrated.execute("SELECT schema_version FROM schema_meta WHERE id = 1").fetchone()[0] == 5
         assert case is not None
         assert case["right_type"] == "UNSPECIFIED"
         assert case["status"] == "AWAITING_RESPONSE"
