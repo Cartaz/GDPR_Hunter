@@ -46,7 +46,7 @@ jobs:
           from pathlib import Path
           lines = [line.strip() for line in Path('/tmp/vulture.txt').read_text().splitlines() if line.strip()]
           print(f"count={len(lines)}")
-          first = lines[0].replace(' ', '_').replace(':', '-')[:150] if lines else 'clean'
+          first = lines[0].replace(' ', '_').replace(':', '-')[:140] if lines else 'clean'
           print(f"first={first}")
           PY
       - name: Vulture ${{ steps.vulture.outputs.count }} finding(s) first ${{ steps.vulture.outputs.first }}
@@ -62,10 +62,26 @@ jobs:
           .venv/bin/pyright main.py config core ui --outputjson > /tmp/pyright.json
           .venv/bin/python - <<'PY' >> "$GITHUB_OUTPUT"
           import json
+          from collections import Counter
           from pathlib import Path
           data = json.loads(Path('/tmp/pyright.json').read_text())
           diagnostics = data.get('generalDiagnostics', [])
+          layers = Counter()
+          for finding in diagnostics:
+              relative = Path(finding.get('file', 'unknown')).as_posix()
+              if '/core/' in relative:
+                  layers['core'] += 1
+              elif '/ui/' in relative:
+                  layers['ui'] += 1
+              elif '/config/' in relative:
+                  layers['config'] += 1
+              else:
+                  layers['main'] += 1
           print(f"count={len(diagnostics)}")
+          print(f"core={layers['core']}")
+          print(f"ui={layers['ui']}")
+          print(f"config={layers['config']}")
+          print(f"main={layers['main']}")
           if diagnostics:
               first = diagnostics[0]
               path = Path(first.get('file', 'unknown')).name
@@ -75,16 +91,14 @@ jobs:
           else:
               print('first=clean')
           PY
-      - name: Pyright ${{ steps.pyright.outputs.count }} finding(s) first ${{ steps.pyright.outputs.first }}
+      - name: Pyright total ${{ steps.pyright.outputs.count }} core ${{ steps.pyright.outputs.core }} ui ${{ steps.pyright.outputs.ui }} config ${{ steps.pyright.outputs.config }} main ${{ steps.pyright.outputs.main }} first ${{ steps.pyright.outputs.first }}
         if: steps.pyright.outputs.count != '0'
         continue-on-error: true
         run: exit 1
 
       - name: Ruff ALL production scan
-        continue-on-error: true
         run: .venv/bin/ruff check main.py config core ui --select ALL
       - name: Dependency vulnerability audit
-        continue-on-error: true
         run: .venv/bin/pip-audit -r requirements.txt -r requirements-dev.txt
 
       - name: Coverage
@@ -104,3 +118,5 @@ jobs:
           print(f"failure={failed.group(1).replace('::','__') if failed else 'none'}")
           PY
           exit $status
+      - name: Coverage ${{ steps.coverage.outputs.percent }} percent failure ${{ steps.coverage.outputs.failure }}
+        run: true
