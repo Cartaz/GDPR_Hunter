@@ -9,7 +9,10 @@ from core.application.egress_policy import EgressDecision, EgressPolicy, Outboun
 from core.application.identity_service import IdentityService
 from core.application.investigation_service import InvestigationService
 from core.application.model_analysis_service import ModelAnalysisService
-from core.application.model_proposal_parser import ModelProposalParser, ModelProposalValidationError
+from core.application.model_proposal_parser import (
+    ModelProposalParser,
+    ModelProposalValidationError,
+)
 from core.domain.investigation import EvidenceKind, EvidenceProvenance
 from core.domain.model_proposal import ClaimProposal, ResearchEvidenceProposal
 from core.storage.artifact_store import ArtifactStore
