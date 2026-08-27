@@ -34,21 +34,35 @@ jobs:
       - name: Canonical pytest
         run: .venv/bin/python -m pytest
       - name: Deprecation warnings as errors
-        continue-on-error: true
         run: .venv/bin/python -W error::DeprecationWarning -m pytest
       - name: Vulture dead-code scan
-        continue-on-error: true
         run: .venv/bin/vulture main.py config core ui --min-confidence 80
       - name: Pyright type scan
-        continue-on-error: true
         run: .venv/bin/pyright main.py config core ui
       - name: Ruff ALL production scan
-        continue-on-error: true
         run: .venv/bin/ruff check main.py config core ui --select ALL
       - name: Dependency vulnerability audit
-        continue-on-error: true
         run: .venv/bin/pip-audit -r requirements.txt -r requirements-dev.txt
-      - name: Coverage report
+      - name: Diagnose coverage pytest
+        id: covdiag
+        shell: bash
         run: |
-          .venv/bin/coverage run -m pytest
-          .venv/bin/coverage report -m
+          set +e
+          .venv/bin/coverage run -m pytest -q > /tmp/coverage-pytest.txt 2>&1
+          .venv/bin/python - <<'PY' >> "$GITHUB_OUTPUT"
+          import re
+          from pathlib import Path
+
+          output = Path("/tmp/coverage-pytest.txt").read_text()
+          failures = re.findall(r"^FAILED\s+([^\s]+)", output, flags=re.MULTILINE)
+          if failures:
+              print(f"node={failures[0].replace('::', '__')}")
+          else:
+              print("node=clean")
+          PY
+      - name: Coverage pytest ${{ steps.covdiag.outputs.node }}
+        if: steps.covdiag.outputs.node != 'clean'
+        run: exit 1
+      - name: Coverage report
+        if: steps.covdiag.outputs.node == 'clean'
+        run: .venv/bin/coverage report -m
