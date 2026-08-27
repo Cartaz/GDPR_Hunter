@@ -34,14 +34,16 @@ def test_research_runner_executes_use_case_off_calling_thread_and_returns_signal
     succeeded = QSignalSpy(runner.researchSucceeded)
     caller_thread_id = threading.get_ident()
 
-    assert runner.start(7, 11, approved_by_user=True) is True
-    assert succeeded.wait(2_000)
-    runner.shutdown()
+    try:
+        assert runner.start(7, 11, approved_by_user=True) is True
+        assert succeeded.wait(2_000)
 
-    assert controller.worker_thread_id is not None
-    assert controller.worker_thread_id != caller_thread_id
-    assert succeeded.count() == 1
-    arguments = succeeded.at(0)
-    assert arguments[0] == 7
-    assert arguments[1] == 11
-    assert arguments[2]["createdCount"] == 2
+        assert controller.worker_thread_id is not None
+        assert controller.worker_thread_id != caller_thread_id
+        assert succeeded.count() == 1
+        arguments = succeeded.at(0)
+        assert arguments[0] == 7
+        assert arguments[1] == 11
+        assert arguments[2]["createdCount"] == 2
+    finally:
+        runner.shutdown()
