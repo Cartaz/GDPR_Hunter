@@ -49,13 +49,49 @@ def test_local_process_endpoint_rejects_non_loopback_host() -> None:
         endpoint.validate()
 
 
-def test_lan_endpoint_accepts_configured_http_endpoint() -> None:
+def test_lan_endpoint_accepts_literal_private_address() -> None:
     parsed = InferenceEndpoint(
         "http://192.168.1.20:8080",
         InferenceLocation.USER_APPROVED_LAN,
     ).validate()
     assert parsed.hostname == "192.168.1.20"
     assert parsed.port == 8080
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://127.0.0.1:8080",
+        "http://8.8.8.8:8080",
+        "http://inference.local:8080",
+    ],
+)
+def test_lan_endpoint_rejects_unverifiable_or_non_lan_destination(url: str) -> None:
+    with pytest.raises(ValueError, match="LAN"):
+        InferenceEndpoint(url, InferenceLocation.USER_APPROVED_LAN).validate()
+
+
+def test_remote_endpoint_requires_https() -> None:
+    with pytest.raises(ValueError, match="HTTPS"):
+        InferenceEndpoint("http://example.com", InferenceLocation.REMOTE).validate()
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://127.0.0.1",
+        "https://192.168.1.20",
+        "https://localhost",
+    ],
+)
+def test_remote_endpoint_rejects_obvious_local_destination(url: str) -> None:
+    with pytest.raises(ValueError, match="REMOTE"):
+        InferenceEndpoint(url, InferenceLocation.REMOTE).validate()
+
+
+def test_remote_endpoint_accepts_https_hostname() -> None:
+    parsed = InferenceEndpoint("https://example.com", InferenceLocation.REMOTE).validate()
+    assert parsed.hostname == "example.com"
 
 
 def test_complete_json_uses_openai_compatible_json_only_request(monkeypatch) -> None:
