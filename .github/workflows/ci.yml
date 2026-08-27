@@ -62,6 +62,28 @@ jobs:
         if: steps.ruffdiag.outputs.code != 'clean'
         run: exit 1
 
-      - name: Pytest
+      - name: Diagnose Pytest
+        id: pytestdiag
         if: steps.ruffdiag.outputs.code == 'clean'
-        run: .venv/bin/python -m pytest
+        shell: bash
+        run: |
+          set +e
+          .venv/bin/python -m pytest -q > /tmp/pytest.txt 2>&1
+          status=$?
+          .venv/bin/python - <<'PY' >> "$GITHUB_OUTPUT"
+          import re
+          from pathlib import Path
+
+          output = Path("/tmp/pytest.txt").read_text()
+          matches = re.findall(r"^FAILED\s+([^\s]+)", output, flags=re.MULTILINE)
+          if matches:
+              node = matches[0].replace("::", "__")
+              print(f"node={node}")
+          else:
+              print("node=clean")
+          PY
+          exit 0
+
+      - name: Pytest ${{ steps.pytestdiag.outputs.node }}
+        if: steps.pytestdiag.outputs.node != 'clean'
+        run: exit 1
