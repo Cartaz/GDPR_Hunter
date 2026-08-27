@@ -50,7 +50,7 @@
         <article class="card">
           <p class="eyebrow">INVESTIGATOR CORE</p>
           <h2>Investigations</h2>
-          <p class="muted">Create an evidence-backed investigation. M6 includes a guarded public-network research foundation, but it is not exposed through the UI until asynchronous worker orchestration is added. LLM inference remains disabled.</p>
+          <p class="muted">Create an evidence-backed investigation, analyze artifacts deterministically, perform explicitly approved public research, and request read-only model proposals for review.</p>
           <form id="investigation-form" class="stack-form">
             <label for="investigation-title">Question or title</label>
             <input id="investigation-title" autocomplete="off" placeholder="Where did this company get my phone number?">
@@ -91,6 +91,13 @@
               <input id="claim-statement" required placeholder="Example Corp appears to possess this phone number">
               <button type="submit">Add hypothesis</button>
             </form>
+
+            <div class="stack-form compact-form" aria-labelledby="model-review-title">
+              <strong id="model-review-title">Model proposal review</strong>
+              <p class="muted">Evidence is sent only after explicit approval. Model output remains inert until you accept a Python-owned proposal.</p>
+              <button id="model-analysis-button" type="button">Generate model proposals</button>
+              <div id="model-proposal-list" class="record-list" aria-live="polite"></div>
+            </div>
 
             <div id="investigation-detail-list" class="record-list"></div>
           </div>
