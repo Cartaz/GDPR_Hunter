@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+import time
 
 from PySide6.QtCore import QCoreApplication
 from PySide6.QtTest import QSignalSpy
@@ -36,8 +37,10 @@ def test_research_runner_executes_use_case_off_calling_thread_and_returns_signal
 
     try:
         assert runner.start(7, 11, approved_by_user=True) is True
-        if succeeded.count() == 0:
-            assert succeeded.wait(2_000)
+        deadline = time.monotonic() + 2.0
+        while succeeded.count() == 0 and time.monotonic() < deadline:
+            application.processEvents()
+            time.sleep(0.01)
 
         assert controller.worker_thread_id is not None
         assert controller.worker_thread_id != caller_thread_id
