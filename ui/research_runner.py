@@ -104,8 +104,8 @@ class ResearchRunner(QObject):
         worker.moveToThread(thread)
 
         thread.started.connect(worker.run)
-        worker.succeeded.connect(self.researchSucceeded)
-        worker.failed.connect(self.researchFailed)
+        worker.succeeded.connect(self._relay_succeeded)
+        worker.failed.connect(self._relay_failed)
         worker.completed.connect(thread.quit)
         worker.completed.connect(worker.deleteLater)
         thread.finished.connect(self._thread_finished)
@@ -116,6 +116,25 @@ class ResearchRunner(QObject):
         self.researchStarted.emit(investigation_id, artifact_id)
         thread.start()
         return True
+
+    @Slot(int, int, object)
+    def _relay_succeeded(
+        self,
+        investigation_id: int,
+        artifact_id: int,
+        result: object,
+    ) -> None:
+        self.researchSucceeded.emit(investigation_id, artifact_id, result)
+
+    @Slot(int, int, str, str)
+    def _relay_failed(
+        self,
+        investigation_id: int,
+        artifact_id: int,
+        code: str,
+        message: str,
+    ) -> None:
+        self.researchFailed.emit(investigation_id, artifact_id, code, message)
 
     @Slot()
     def _thread_finished(self) -> None:
