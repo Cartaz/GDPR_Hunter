@@ -1,8 +1,11 @@
 name: CI
 
 on:
+  workflow_dispatch:
   push:
-    branches: [main]
+    branches:
+      - main
+      - m7-async-research
   pull_request:
 
 jobs:
