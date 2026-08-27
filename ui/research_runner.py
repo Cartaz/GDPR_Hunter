@@ -127,5 +127,9 @@ class ResearchRunner(QObject):
         if thread is None:
             return
         thread.requestInterruption()
+        # QThread lives in the GUI thread, so a worker->quit auto-connection may still
+        # be queued when shutdown starts. Calling quit here before wait avoids blocking
+        # the event loop that would otherwise have to deliver that queued call.
+        thread.quit()
         if not thread.wait(self.SHUTDOWN_WAIT_MS):
             _LOG.error("Research worker did not stop within the bounded shutdown window")
