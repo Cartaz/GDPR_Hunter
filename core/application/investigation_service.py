@@ -20,6 +20,7 @@ from core.domain.investigation import (
     validate_claim_transition,
     validate_investigation_transition,
 )
+from core.domain.model_proposal import ClaimProposal
 from core.storage.artifact_store import ArtifactStore
 from core.storage.investigation_repository import InvestigationRepository
 
@@ -245,6 +246,32 @@ class InvestigationService:
         if confidence is not None and not 0.0 <= confidence <= 1.0:
             raise ValueError("Claim confidence must be between 0 and 1")
         return self._repository.create_claim(investigation_id, normalized, provenance, confidence)
+
+    def accept_model_claim(
+        self,
+        investigation_id: int,
+        proposal: ClaimProposal,
+        *,
+        approved_by_user: bool,
+    ) -> Claim:
+        self._require_investigation(investigation_id)
+        if not approved_by_user:
+            raise PermissionError("Model claim requires explicit user review and approval")
+        normalized = proposal.statement.strip()
+        if not normalized:
+            raise ValueError("Model claim statement is required")
+        if not proposal.evidence_ids:
+            raise ValueError("Model claim requires supporting evidence")
+        if len(set(proposal.evidence_ids)) != len(proposal.evidence_ids):
+            raise ValueError("Model claim contains duplicate evidence ids")
+        if not 0.0 <= proposal.confidence <= 1.0:
+            raise ValueError("Model claim confidence must be between 0 and 1")
+        return self._repository.create_model_claim_with_supporting_evidence(
+            investigation_id,
+            normalized,
+            proposal.confidence,
+            proposal.evidence_ids,
+        )
 
     def list_claims(self, investigation_id: int) -> list[Claim]:
         self._require_investigation(investigation_id)
