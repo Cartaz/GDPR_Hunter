@@ -1,0 +1,54 @@
+name: Deep Audit
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [audit-m14-deep-review]
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    env:
+      QT_QPA_PLATFORM: offscreen
+      QTWEBENGINE_CHROMIUM_FLAGS: --disable-gpu
+      QTWEBENGINE_DISABLE_SANDBOX: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install Qt runtime libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libgl1 libxkbcommon-x11-0 libxcb-cursor0
+      - name: Install project and audit tools
+        run: |
+          chmod +x install.sh
+          ./install.sh
+          .venv/bin/python -m pip install vulture pyright pip-audit coverage
+      - name: Canonical compile
+        run: .venv/bin/python -m compileall -q main.py config core ui tests
+      - name: Canonical Ruff
+        run: .venv/bin/ruff check main.py config core ui tests
+      - name: Canonical pytest
+        run: .venv/bin/python -m pytest
+      - name: Deprecation warnings as errors
+        continue-on-error: true
+        run: .venv/bin/python -W error::DeprecationWarning -m pytest
+      - name: Vulture dead-code scan
+        continue-on-error: true
+        run: .venv/bin/vulture main.py config core ui --min-confidence 80
+      - name: Pyright type scan
+        continue-on-error: true
+        run: .venv/bin/pyright main.py config core ui
+      - name: Ruff ALL production scan
+        continue-on-error: true
+        run: .venv/bin/ruff check main.py config core ui --select ALL
+      - name: Dependency vulnerability audit
+        continue-on-error: true
+        run: .venv/bin/pip-audit -r requirements.txt -r requirements-dev.txt
+      - name: Coverage report
+        run: |
+          .venv/bin/coverage run -m pytest
+          .venv/bin/coverage report -m
