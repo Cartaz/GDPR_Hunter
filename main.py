@@ -7,14 +7,18 @@ from pathlib import Path
 
 from PySide6.QtWidgets import QApplication, QMessageBox
 
-from config.settings import SettingsStore
+from config.settings import AppSettings, SettingsStore
 from core.application.app_controller import AppController
 from core.application.artifact_analyzer import ArtifactAnalyzer
 from core.application.case_service import CaseService
 from core.application.deadline_engine import DeadlineEngine
 from core.application.egress_policy import EgressPolicy
 from core.application.identity_service import IdentityService
+from core.application.inference_endpoint import InferenceEndpoint, InferenceLocation
+from core.application.inference_service import InferenceService
 from core.application.investigation_service import InvestigationService
+from core.application.model_analysis_service import ModelAnalysisService
+from core.application.model_proposal_parser import ModelProposalParser
 from core.application.network_policy import NetworkPolicy
 from core.application.paths import default_app_paths
 from core.application.research_service import ResearchService
@@ -30,6 +34,7 @@ from core.storage.secret_store import SecretStore, SecretStoreUnavailable
 from core.storage.sensitive_store import SensitiveStore
 from core.storage.target_repository import TargetRepository
 from ui.bridge import Bridge
+from ui.model_analysis_runner import ModelAnalysisRunner
 from ui.research_runner import ResearchRunner
 from ui.window import MainWindow
 
@@ -44,9 +49,9 @@ def configure_logging() -> None:
     )
 
 
-def build_controller() -> tuple[AppController, SettingsStore]:
+def build_controller() -> tuple[AppController, ModelAnalysisService, AppSettings]:
     paths = default_app_paths()
-    settings_store = SettingsStore(paths.settings_path)
+    settings = SettingsStore(paths.settings_path).load()
 
     database = Database(paths.database_path)
     database.initialize()
@@ -74,9 +79,23 @@ def build_controller() -> tuple[AppController, SettingsStore]:
         research_service,
         egress_policy,
     )
+    inference_service = InferenceService(
+        InferenceEndpoint(
+            settings.inference_endpoint,
+            InferenceLocation(settings.inference_location),
+        )
+    )
+    model_analysis_service = ModelAnalysisService(
+        investigation_service,
+        inference_service,
+        ModelProposalParser(),
+        egress_policy,
+        model=settings.inference_model,
+    )
     return (
         AppController(identity_service, target_service, case_service, investigation_service),
-        settings_store,
+        model_analysis_service,
+        settings,
     )
 
 
@@ -86,7 +105,7 @@ def main() -> int:
     application.setApplicationName("GDPR Hunter")
 
     try:
-        controller, settings_store = build_controller()
+        controller, model_analysis_service, settings = build_controller()
     except SecretStoreUnavailable:
         _LOG.critical("Secure credential store unavailable", exc_info=True)
         QMessageBox.critical(
@@ -100,10 +119,11 @@ def main() -> int:
         QMessageBox.critical(None, "GDPR Hunter", "Application initialization failed. Check the logs for details.")
         return 1
 
-    settings = settings_store.load()
     research_runner = ResearchRunner(controller)
-    bridge = Bridge(controller, research_runner)
+    model_analysis_runner = ModelAnalysisRunner(model_analysis_service)
+    bridge = Bridge(controller, research_runner, model_analysis_runner)
     application.aboutToQuit.connect(research_runner.shutdown)
+    application.aboutToQuit.connect(model_analysis_runner.shutdown)
     window = MainWindow(
         bridge=bridge,
         web_root=ROOT_DIR / "ui" / "web",
