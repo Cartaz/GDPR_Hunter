@@ -26,7 +26,7 @@ jobs:
         run: |
           chmod +x install.sh
           ./install.sh
-          .venv/bin/python -m pip install vulture pyright pip-audit coverage
+          .venv/bin/python -m pip install vulture pyright pip-audit pytest-cov
       - name: Canonical compile
         run: .venv/bin/python -m compileall -q main.py config core ui tests
       - name: Canonical Ruff
@@ -45,50 +45,23 @@ jobs:
           .venv/bin/python - <<'PY' >> "$GITHUB_OUTPUT"
           from pathlib import Path
           lines = [line.strip() for line in Path('/tmp/vulture.txt').read_text().splitlines() if line.strip()]
+          print(f"count={len(lines)}")
           if lines:
-              first = lines[0].replace(' ', '_').replace(':', '-')[:180]
-              print(f"finding={first}")
+              first = lines[0].replace(' ', '_').replace(':', '-')[:160]
+              print(f"first={first}")
           else:
-              print("finding=clean")
+              print("first=clean")
           PY
-      - name: Vulture ${{ steps.vulture.outputs.finding }}
-        if: steps.vulture.outputs.finding != 'clean'
+      - name: Vulture ${{ steps.vulture.outputs.count }} finding(s) first ${{ steps.vulture.outputs.first }}
+        if: steps.vulture.outputs.count != '0'
         continue-on-error: true
         run: exit 1
 
       - name: Pyright type scan
-        id: pyright
-        continue-on-error: true
         run: .venv/bin/pyright main.py config core ui
       - name: Ruff ALL production scan
-        id: ruffall
-        continue-on-error: true
         run: .venv/bin/ruff check main.py config core ui --select ALL
       - name: Dependency vulnerability audit
-        id: pipaudit
-        continue-on-error: true
         run: .venv/bin/pip-audit -r requirements.txt -r requirements-dev.txt
-
-      - name: Diagnose coverage pytest
-        id: covdiag
-        shell: bash
-        run: |
-          set +e
-          .venv/bin/coverage run -m pytest -q > /tmp/coverage-pytest.txt 2>&1
-          .venv/bin/python - <<'PY' >> "$GITHUB_OUTPUT"
-          import re
-          from pathlib import Path
-          output = Path('/tmp/coverage-pytest.txt').read_text()
-          failures = re.findall(r'^FAILED\s+([^\s]+)', output, flags=re.MULTILINE)
-          if failures:
-              print(f"node={failures[0].replace('::', '__')}")
-          else:
-              print("node=clean")
-          PY
-      - name: Coverage pytest ${{ steps.covdiag.outputs.node }}
-        if: steps.covdiag.outputs.node != 'clean'
-        continue-on-error: true
-        run: exit 1
-      - name: Coverage report
-        if: steps.covdiag.outputs.node == 'clean'
-        run: .venv/bin/coverage report -m
+      - name: Coverage
+        run: .venv/bin/python -m pytest --cov=main --cov=config --cov=core --cov=ui --cov-report=term-missing
