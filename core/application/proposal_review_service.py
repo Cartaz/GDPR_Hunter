@@ -52,7 +52,7 @@ class ProposalReviewService:
         if reviewed is None:
             raise LookupError("Proposal token is unknown, expired, or already used")
         if not isinstance(reviewed.proposal, ClaimProposal):
-            raise ValueError("Only claim proposals can be accepted as claims")
+            raise TypeError("Only claim proposals can be accepted as claims")
 
         claim = self._investigation_service.accept_model_claim(
             reviewed.investigation_id,
