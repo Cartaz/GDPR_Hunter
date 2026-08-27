@@ -216,6 +216,57 @@ class InvestigationRepository:
             raise RuntimeError("Created claim could not be reloaded")
         return self._claim_from_row(row)
 
+    def create_model_claim_with_supporting_evidence(
+        self,
+        investigation_id: int,
+        statement: str,
+        confidence: float,
+        evidence_ids: tuple[int, ...],
+    ) -> Claim:
+        if not evidence_ids:
+            raise ValueError("Model claim requires supporting evidence")
+        statement_enc = self._sensitive_store.encrypt_text(statement)
+        with self._database.transaction() as connection:
+            placeholders = ",".join("?" for _ in evidence_ids)
+            rows = connection.execute(
+                f"SELECT id FROM evidence WHERE investigation_id = ? AND id IN ({placeholders})",
+                (investigation_id, *evidence_ids),
+            ).fetchall()
+            available_ids = {int(row["id"]) for row in rows}
+            if available_ids != set(evidence_ids):
+                raise ValueError("Model claim evidence must belong to this investigation")
+
+            cursor = connection.execute(
+                """
+                INSERT INTO claims(
+                    investigation_id, statement_enc, status, provenance, confidence, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+                """,
+                (
+                    investigation_id,
+                    statement_enc,
+                    ClaimStatus.HYPOTHESIS.value,
+                    ClaimProvenance.MODEL_INFERENCE.value,
+                    confidence,
+                ),
+            )
+            claim_id = int(cursor.lastrowid)
+            connection.executemany(
+                """
+                INSERT INTO claim_evidence(claim_id, evidence_id, relation, attached_at)
+                VALUES (?, ?, ?, datetime('now'))
+                """,
+                [
+                    (claim_id, evidence_id, EvidenceRelation.SUPPORTS.value)
+                    for evidence_id in evidence_ids
+                ],
+            )
+            row = connection.execute("SELECT * FROM claims WHERE id = ?", (claim_id,)).fetchone()
+        if row is None:
+            raise RuntimeError("Created model claim could not be reloaded")
+        return self._claim_from_row(row)
+
     def get_claim(self, claim_id: int) -> Claim | None:
         with self._database.connection_scope() as connection:
             row = connection.execute("SELECT * FROM claims WHERE id = ?", (claim_id,)).fetchone()
