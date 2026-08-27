@@ -29,6 +29,7 @@ from core.storage.secret_store import SecretStore, SecretStoreUnavailable
 from core.storage.sensitive_store import SensitiveStore
 from core.storage.target_repository import TargetRepository
 from ui.bridge import Bridge
+from ui.research_runner import ResearchRunner
 from ui.window import MainWindow
 
 _LOG = logging.getLogger(__name__)
@@ -98,7 +99,9 @@ def main() -> int:
         return 1
 
     settings = settings_store.load()
-    bridge = Bridge(controller)
+    research_runner = ResearchRunner(controller)
+    bridge = Bridge(controller, research_runner)
+    application.aboutToQuit.connect(research_runner.shutdown)
     window = MainWindow(
         bridge=bridge,
         web_root=ROOT_DIR / "ui" / "web",

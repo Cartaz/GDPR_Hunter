@@ -43,13 +43,17 @@ def test_frontend_cannot_assign_privileged_investigation_provenance():
     assert "def createClaim" not in bridge
 
 
-def test_blocking_research_is_not_exposed_through_qwebchannel():
+def test_research_bridge_exposes_semantic_async_action_not_network_primitive():
     javascript = (ROOT / "ui" / "web" / "js" / "app.js").read_text(encoding="utf-8")
     bridge = (ROOT / "ui" / "bridge.py").read_text(encoding="utf-8")
+    runner = (ROOT / "ui" / "research_runner.py").read_text(encoding="utf-8")
 
-    assert "researchArtifact" not in javascript
-    assert "researchArtifact" not in bridge
+    assert "researchArtifactUrls" in javascript
+    assert "researchArtifactUrls" in bridge
     assert "fetchUrl" not in bridge
+    assert "http.client" not in bridge
+    assert "QThread" not in bridge
+    assert "QThread" in runner
 
 
 def test_local_navigation_is_confined_to_web_root(tmp_path):
