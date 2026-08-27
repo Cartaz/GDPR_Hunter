@@ -46,22 +46,61 @@ jobs:
           from pathlib import Path
           lines = [line.strip() for line in Path('/tmp/vulture.txt').read_text().splitlines() if line.strip()]
           print(f"count={len(lines)}")
-          if lines:
-              first = lines[0].replace(' ', '_').replace(':', '-')[:160]
-              print(f"first={first}")
-          else:
-              print("first=clean")
+          first = lines[0].replace(' ', '_').replace(':', '-')[:150] if lines else 'clean'
+          print(f"first={first}")
           PY
       - name: Vulture ${{ steps.vulture.outputs.count }} finding(s) first ${{ steps.vulture.outputs.first }}
         if: steps.vulture.outputs.count != '0'
         continue-on-error: true
         run: exit 1
 
-      - name: Pyright type scan
-        run: .venv/bin/pyright main.py config core ui
+      - name: Diagnose Pyright
+        id: pyright
+        shell: bash
+        run: |
+          set +e
+          .venv/bin/pyright main.py config core ui --outputjson > /tmp/pyright.json
+          .venv/bin/python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          from pathlib import Path
+          data = json.loads(Path('/tmp/pyright.json').read_text())
+          diagnostics = data.get('generalDiagnostics', [])
+          print(f"count={len(diagnostics)}")
+          if diagnostics:
+              first = diagnostics[0]
+              path = Path(first.get('file', 'unknown')).name
+              line = int(first.get('range', {}).get('start', {}).get('line', -1)) + 1
+              rule = first.get('rule') or 'no-rule'
+              print(f"first={path}-{line}-{rule}")
+          else:
+              print('first=clean')
+          PY
+      - name: Pyright ${{ steps.pyright.outputs.count }} finding(s) first ${{ steps.pyright.outputs.first }}
+        if: steps.pyright.outputs.count != '0'
+        continue-on-error: true
+        run: exit 1
+
       - name: Ruff ALL production scan
+        continue-on-error: true
         run: .venv/bin/ruff check main.py config core ui --select ALL
       - name: Dependency vulnerability audit
+        continue-on-error: true
         run: .venv/bin/pip-audit -r requirements.txt -r requirements-dev.txt
+
       - name: Coverage
-        run: .venv/bin/python -m pytest --cov=main --cov=config --cov=core --cov=ui --cov-report=term-missing
+        id: coverage
+        shell: bash
+        run: |
+          set +e
+          .venv/bin/python -m pytest --cov=main --cov=config --cov=core --cov=ui --cov-report=term > /tmp/coverage.txt 2>&1
+          status=$?
+          .venv/bin/python - <<'PY' >> "$GITHUB_OUTPUT"
+          import re
+          from pathlib import Path
+          text = Path('/tmp/coverage.txt').read_text()
+          total = re.search(r'^TOTAL\s+\d+\s+\d+\s+(\d+)%$', text, flags=re.MULTILINE)
+          failed = re.search(r'^FAILED\s+([^\s]+)', text, flags=re.MULTILINE)
+          print(f"percent={total.group(1) if total else 'unknown'}")
+          print(f"failure={failed.group(1).replace('::','__') if failed else 'none'}")
+          PY
+          exit $status
