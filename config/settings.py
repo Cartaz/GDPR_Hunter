@@ -12,6 +12,7 @@ class AppSettings:
     window_height: int = 820
     inference_endpoint: str = "http://127.0.0.1:8080"
     inference_location: str = "LOCAL_PROCESS"
+    inference_model: str = "default"
 
 
 class SettingsStore:
@@ -46,6 +47,7 @@ class SettingsStore:
                 defaults.inference_location,
                 {"LOCAL_PROCESS", "USER_APPROVED_LAN", "REMOTE"},
             ),
+            inference_model=self._string(payload.get("inference_model"), defaults.inference_model),
         )
 
     def save(self, settings: AppSettings) -> None:
