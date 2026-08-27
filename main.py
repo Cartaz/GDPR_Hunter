@@ -21,6 +21,7 @@ from core.application.model_analysis_service import ModelAnalysisService
 from core.application.model_proposal_parser import ModelProposalParser
 from core.application.network_policy import NetworkPolicy
 from core.application.paths import default_app_paths
+from core.application.proposal_review_service import ProposalReviewService
 from core.application.research_service import ResearchService
 from core.application.target_service import TargetService
 from core.domain.rights import RightsPolicy
@@ -49,7 +50,12 @@ def configure_logging() -> None:
     )
 
 
-def build_controller() -> tuple[AppController, ModelAnalysisService, AppSettings]:
+def build_controller() -> tuple[
+    AppController,
+    ModelAnalysisService,
+    ProposalReviewService,
+    AppSettings,
+]:
     paths = default_app_paths()
     settings = SettingsStore(paths.settings_path).load()
 
@@ -95,6 +101,7 @@ def build_controller() -> tuple[AppController, ModelAnalysisService, AppSettings
     return (
         AppController(identity_service, target_service, case_service, investigation_service),
         model_analysis_service,
+        ProposalReviewService(investigation_service),
         settings,
     )
 
@@ -105,7 +112,7 @@ def main() -> int:
     application.setApplicationName("GDPR Hunter")
 
     try:
-        controller, model_analysis_service, settings = build_controller()
+        controller, model_analysis_service, proposal_review_service, settings = build_controller()
     except SecretStoreUnavailable:
         _LOG.critical("Secure credential store unavailable", exc_info=True)
         QMessageBox.critical(
@@ -121,7 +128,12 @@ def main() -> int:
 
     research_runner = ResearchRunner(controller)
     model_analysis_runner = ModelAnalysisRunner(model_analysis_service)
-    bridge = Bridge(controller, research_runner, model_analysis_runner)
+    bridge = Bridge(
+        controller,
+        research_runner,
+        model_analysis_runner,
+        proposal_review_service,
+    )
     application.aboutToQuit.connect(research_runner.shutdown)
     application.aboutToQuit.connect(model_analysis_runner.shutdown)
     window = MainWindow(

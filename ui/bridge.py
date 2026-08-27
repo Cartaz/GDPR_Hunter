@@ -5,6 +5,11 @@ import logging
 from PySide6.QtCore import QObject, Signal, Slot
 
 from core.application.app_controller import AppController
+from core.application.proposal_review_service import (
+    ProposalReviewService,
+    ReviewProposal,
+)
+from core.domain.investigation import Claim
 from core.domain.model_proposal import ClaimProposal, ResearchEvidenceProposal
 from ui.model_analysis_runner import ModelAnalysisRunner
 from ui.research_runner import ResearchRunner
@@ -27,11 +32,13 @@ class Bridge(QObject):
         controller: AppController,
         research_runner: ResearchRunner,
         model_analysis_runner: ModelAnalysisRunner | None = None,
+        proposal_review_service: ProposalReviewService | None = None,
     ) -> None:
         super().__init__()
         self._controller = controller
         self._research_runner = research_runner
         self._model_analysis_runner = model_analysis_runner
+        self._proposal_review_service = proposal_review_service
         research_runner.researchStarted.connect(self.researchStarted)
         research_runner.researchSucceeded.connect(self._research_succeeded)
         research_runner.researchFailed.connect(self._research_failed)
@@ -131,10 +138,35 @@ class Bridge(QObject):
                 "Model analysis requires explicit approval to send Investigation Evidence to the configured inference endpoint",
             )
         runner = self._model_analysis_runner
-        if runner is None:
-            return self._fail("CAPABILITY_UNAVAILABLE", "Model analysis is not configured")
+        if runner is None or self._proposal_review_service is None:
+            return self._fail("CAPABILITY_UNAVAILABLE", "Model analysis review is not configured")
         if not runner.start(investigation_id, approved_by_user=approved_by_user):
             return self._fail("BUSY", "Another model analysis is already running")
+        return {"ok": True}
+
+    @Slot(str, bool, result="QVariant")
+    def acceptModelClaim(self, proposal_token: str, approved_by_user: bool) -> dict[str, object]:
+        if not approved_by_user:
+            return self._fail("APPROVAL_REQUIRED", "Model claim requires explicit user review and approval")
+        review_service = self._proposal_review_service
+        if review_service is None:
+            return self._fail("CAPABILITY_UNAVAILABLE", "Model proposal review is not configured")
+        try:
+            claim = review_service.accept_claim(proposal_token, approved_by_user=True)
+        except (TypeError, ValueError, LookupError) as exc:
+            return self._fail("INVALID_INPUT", str(exc))
+        self.stateChanged.emit(self._controller.get_bootstrap_state())
+        return {"ok": True, "result": self._claim_dto(claim)}
+
+    @Slot(str, result="QVariant")
+    def discardModelProposal(self, proposal_token: str) -> dict[str, object]:
+        review_service = self._proposal_review_service
+        if review_service is None:
+            return self._fail("CAPABILITY_UNAVAILABLE", "Model proposal review is not configured")
+        try:
+            review_service.discard(proposal_token)
+        except (ValueError, LookupError) as exc:
+            return self._fail("INVALID_INPUT", str(exc))
         return {"ok": True}
 
     @Slot(int, int, str, str, result="QVariant")
@@ -186,7 +218,16 @@ class Bridge(QObject):
 
     @Slot(int, object)
     def _model_analysis_succeeded(self, investigation_id: int, result: object) -> None:
-        proposals = [self._proposal_dto(item) for item in result]
+        review_service = self._proposal_review_service
+        if review_service is None:
+            self._model_analysis_failed(
+                investigation_id,
+                "CAPABILITY_UNAVAILABLE",
+                "Model proposal review is not configured",
+            )
+            return
+        registered = review_service.register(investigation_id, tuple(result))
+        proposals = [self._proposal_dto(item) for item in registered]
         self.modelAnalysisCompleted.emit(investigation_id, {"proposals": proposals})
 
     @Slot(int, str, str)
@@ -201,9 +242,11 @@ class Bridge(QObject):
         self.operationFailed.emit(code, message)
 
     @staticmethod
-    def _proposal_dto(proposal: object) -> dict[str, object]:
+    def _proposal_dto(reviewed: ReviewProposal) -> dict[str, object]:
+        proposal = reviewed.proposal
         if isinstance(proposal, ClaimProposal):
             return {
+                "token": reviewed.token,
                 "kind": "CLAIM",
                 "statement": proposal.statement,
                 "evidenceIds": list(proposal.evidence_ids),
@@ -211,11 +254,24 @@ class Bridge(QObject):
             }
         if isinstance(proposal, ResearchEvidenceProposal):
             return {
+                "token": reviewed.token,
                 "kind": "RESEARCH_EVIDENCE",
                 "evidenceId": proposal.evidence_id,
                 "rationale": proposal.rationale,
             }
         raise TypeError("Unsupported model proposal type")
+
+    @staticmethod
+    def _claim_dto(claim: Claim) -> dict[str, object]:
+        return {
+            "id": claim.id,
+            "statement": claim.statement,
+            "status": claim.status.value,
+            "provenance": claim.provenance.value,
+            "confidence": claim.confidence,
+            "createdAt": claim.created_at,
+            "updatedAt": claim.updated_at,
+        }
 
     def _read(self, operation):
         try:

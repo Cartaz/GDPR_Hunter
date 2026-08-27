@@ -36,11 +36,23 @@ def test_frontend_cannot_assign_privileged_investigation_provenance():
 
     assert "DETERMINISTIC_ANALYSIS" not in javascript
     assert "AUTHORITATIVE_SOURCE" not in javascript
-    assert "MODEL_INFERENCE" not in javascript
+    assert "provenance:" not in javascript
     assert "addUserEvidence" in bridge
     assert "createUserClaim" in bridge
     assert "def addEvidence" not in bridge
     assert "def createClaim" not in bridge
+
+
+def test_model_claim_review_uses_opaque_token_not_frontend_provenance_payload():
+    javascript = (ROOT / "ui" / "web" / "js" / "app.js").read_text(encoding="utf-8")
+    bridge = (ROOT / "ui" / "bridge.py").read_text(encoding="utf-8")
+
+    assert "backend.acceptModelClaim(token, approved" in javascript
+    assert "def acceptModelClaim(self, proposal_token: str, approved_by_user: bool)" in bridge
+    assert "proposal_token" in bridge
+    assert "statement" not in bridge.split("def acceptModelClaim", 1)[1].split("def discardModelProposal", 1)[0]
+    assert "confidence" not in bridge.split("def acceptModelClaim", 1)[1].split("def discardModelProposal", 1)[0]
+    assert "evidence_ids" not in bridge.split("def acceptModelClaim", 1)[1].split("def discardModelProposal", 1)[0]
 
 
 def test_research_bridge_exposes_semantic_async_action_not_network_primitive():
