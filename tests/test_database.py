@@ -27,8 +27,11 @@ def test_current_schema_has_case_deadline_snapshot_columns(tmp_path):
             "SELECT schema_version FROM schema_meta WHERE id = 1"
         ).fetchone()[0]
         columns = {row["name"] for row in connection.execute("PRAGMA table_info(cases)").fetchall()}
+        approved_table = connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'approved_outbound_requests'"
+        ).fetchone()
 
-    assert version == 6
+    assert version == Database.CURRENT_SCHEMA_VERSION
     assert {
         "deadline_jurisdiction",
         "initial_due_on",
@@ -37,6 +40,7 @@ def test_current_schema_has_case_deadline_snapshot_columns(tmp_path):
         "holiday_source",
         "holiday_calendar_complete",
     } <= columns
+    assert approved_table is not None
 
 
 def test_orphan_identifier_is_rejected(tmp_path):
@@ -93,7 +97,10 @@ def test_v1_database_is_migrated_without_losing_existing_rows(tmp_path):
     database.initialize()
 
     with database.connection_scope() as migrated:
-        assert migrated.execute("SELECT schema_version FROM schema_meta WHERE id = 1").fetchone()[0] == 6
+        assert (
+            migrated.execute("SELECT schema_version FROM schema_meta WHERE id = 1").fetchone()[0]
+            == Database.CURRENT_SCHEMA_VERSION
+        )
         assert migrated.execute("SELECT COUNT(*) FROM identities").fetchone()[0] == 1
         assert migrated.execute(
             "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN ('targets', 'cases', 'case_events')"
@@ -103,6 +110,9 @@ def test_v1_database_is_migrated_without_losing_existing_rows(tmp_path):
         ).fetchone()[0] == 4
         assert migrated.execute(
             "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'outbound_audit'"
+        ).fetchone()[0] == 1
+        assert migrated.execute(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'approved_outbound_requests'"
         ).fetchone()[0] == 1
         case_columns = {
             row["name"] for row in migrated.execute("PRAGMA table_info(cases)").fetchall()
@@ -194,7 +204,10 @@ def test_v2_open_case_migrates_to_awaiting_response_without_data_loss(tmp_path):
         event = migrated.execute(
             "SELECT from_status, to_status FROM case_events WHERE id = 1"
         ).fetchone()
-        assert migrated.execute("SELECT schema_version FROM schema_meta WHERE id = 1").fetchone()[0] == 6
+        assert (
+            migrated.execute("SELECT schema_version FROM schema_meta WHERE id = 1").fetchone()[0]
+            == Database.CURRENT_SCHEMA_VERSION
+        )
         assert case is not None
         assert case["right_type"] == "UNSPECIFIED"
         assert case["status"] == "AWAITING_RESPONSE"
@@ -208,6 +221,9 @@ def test_v2_open_case_migrates_to_awaiting_response_without_data_loss(tmp_path):
         assert case["holiday_calendar_complete"] is None
         assert event["from_status"] == "DRAFT"
         assert event["to_status"] == "AWAITING_RESPONSE"
+        assert migrated.execute(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'approved_outbound_requests'"
+        ).fetchone()[0] == 1
 
     with pytest.raises(sqlite3.IntegrityError), database.transaction() as migrated:
         migrated.execute(
