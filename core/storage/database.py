@@ -282,6 +282,8 @@ class Database:
         for statement in statements:
             connection.execute(statement)
         Database._create_case_event_triggers(connection)
+        if include_deadline_snapshot:
+            Database._create_case_deadline_snapshot_triggers(connection)
 
     @staticmethod
     def _create_case_event_triggers(connection: sqlite3.Connection) -> None:
@@ -300,6 +302,46 @@ class Database:
             BEFORE DELETE ON case_events
             BEGIN
                 SELECT RAISE(ABORT, 'case events are append-only');
+            END
+            """
+        )
+
+    @staticmethod
+    def _create_case_deadline_snapshot_triggers(connection: sqlite3.Connection) -> None:
+        snapshot_fields = """
+            deadline_jurisdiction, initial_due_on, extended_due_on,
+            holiday_dates_json, holiday_source, holiday_calendar_complete
+        """
+        connection.execute(
+            f"""
+            CREATE TRIGGER case_deadline_snapshot_complete
+            BEFORE UPDATE OF {snapshot_fields} ON cases
+            WHEN NOT (
+                (NEW.deadline_jurisdiction IS NULL AND NEW.initial_due_on IS NULL
+                 AND NEW.extended_due_on IS NULL AND NEW.holiday_dates_json IS NULL
+                 AND NEW.holiday_source IS NULL AND NEW.holiday_calendar_complete IS NULL)
+                OR
+                (NEW.deadline_jurisdiction IS NOT NULL AND NEW.initial_due_on IS NOT NULL
+                 AND NEW.extended_due_on IS NOT NULL AND NEW.holiday_dates_json IS NOT NULL
+                 AND NEW.holiday_source IS NOT NULL AND NEW.holiday_calendar_complete IS NOT NULL)
+            )
+            BEGIN
+                SELECT RAISE(ABORT, 'case deadline snapshot must be complete');
+            END
+            """
+        )
+        connection.execute(
+            f"""
+            CREATE TRIGGER case_deadline_snapshot_immutable
+            BEFORE UPDATE OF {snapshot_fields} ON cases
+            WHEN OLD.deadline_jurisdiction IS NOT NULL
+              OR OLD.initial_due_on IS NOT NULL
+              OR OLD.extended_due_on IS NOT NULL
+              OR OLD.holiday_dates_json IS NOT NULL
+              OR OLD.holiday_source IS NOT NULL
+              OR OLD.holiday_calendar_complete IS NOT NULL
+            BEGIN
+                SELECT RAISE(ABORT, 'case deadline snapshot is immutable');
             END
             """
         )
@@ -521,6 +563,7 @@ class Database:
                 CHECK (holiday_calendar_complete IS NULL OR holiday_calendar_complete IN (0, 1))
                 """
             )
+            self._create_case_deadline_snapshot_triggers(connection)
             self._set_schema_version(connection, expected=5, target=6)
 
     @staticmethod
