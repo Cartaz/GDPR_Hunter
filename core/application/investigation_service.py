@@ -3,7 +3,11 @@ from __future__ import annotations
 from core.application.artifact_analyzer import ArtifactAnalyzer
 from core.application.egress_policy import EgressPolicy, OutboundIntent
 from core.application.identity_service import IdentityService
-from core.application.research_service import CancellationCheck, ResearchCancelled, ResearchService
+from core.application.research_service import (
+    CancellationCheck,
+    ResearchCancelled,
+    ResearchService,
+)
 from core.domain.investigation import (
     Artifact,
     ArtifactKind,
