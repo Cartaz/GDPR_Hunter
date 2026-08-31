@@ -24,6 +24,9 @@ class Bridge(QObject):
     researchStarted = Signal(int, int)
     researchCompleted = Signal(int, int, object)
     researchFailed = Signal(int, int, str, str)
+    modelResearchStarted = Signal(int, int)
+    modelResearchCompleted = Signal(int, int, object)
+    modelResearchFailed = Signal(int, int, str, str)
     modelAnalysisStarted = Signal(int)
     modelAnalysisCompleted = Signal(int, object)
     modelAnalysisFailed = Signal(int, str, str)
@@ -43,6 +46,9 @@ class Bridge(QObject):
         research_runner.researchStarted.connect(self.researchStarted)
         research_runner.researchSucceeded.connect(self._research_succeeded)
         research_runner.researchFailed.connect(self._research_failed)
+        research_runner.modelResearchStarted.connect(self.modelResearchStarted)
+        research_runner.modelResearchSucceeded.connect(self._model_research_succeeded)
+        research_runner.modelResearchFailed.connect(self._model_research_failed)
         if model_analysis_runner is not None:
             model_analysis_runner.analysisStarted.connect(self.modelAnalysisStarted)
             model_analysis_runner.analysisSucceeded.connect(self._model_analysis_succeeded)
@@ -158,6 +164,46 @@ class Bridge(QObject):
         self.stateChanged.emit(self._controller.get_bootstrap_state())
         return {"ok": True, "result": self._claim_dto(claim)}
 
+    @Slot(str, bool, result="QVariant")
+    def executeModelResearchProposal(
+        self,
+        proposal_token: str,
+        approved_by_user: bool,
+    ) -> dict[str, object]:
+        if not approved_by_user:
+            return self._fail(
+                "APPROVAL_REQUIRED",
+                "Model research requires explicit user review and approval",
+            )
+        review_service = self._proposal_review_service
+        if review_service is None:
+            return self._fail("CAPABILITY_UNAVAILABLE", "Model proposal review is not configured")
+        if self._research_runner.is_busy:
+            return self._fail("BUSY", "Another research operation is already running")
+        try:
+            request = review_service.accept_research(proposal_token, approved_by_user=True)
+        except PermissionError as exc:
+            return self._fail("APPROVAL_REQUIRED", str(exc))
+        except (TypeError, ValueError, LookupError) as exc:
+            return self._fail("INVALID_INPUT", str(exc))
+
+        # Bridge slots execute serially on the GUI thread. No event-loop turn occurs
+        # between the idle check above, token consumption, and this start call.
+        if not self._research_runner.start_model_evidence(
+            request.investigation_id,
+            request.evidence_id,
+            approved_by_user=True,
+        ):
+            _LOG.error("Research runner became busy after reviewed proposal resolution")
+            return self._fail("OPERATION_FAILED", "Research operation could not be scheduled")
+        return {
+            "ok": True,
+            "result": {
+                "investigationId": request.investigation_id,
+                "evidenceId": request.evidence_id,
+            },
+        }
+
     @Slot(str, result="QVariant")
     def discardModelProposal(self, proposal_token: str) -> dict[str, object]:
         review_service = self._proposal_review_service
@@ -217,6 +263,28 @@ class Bridge(QObject):
     ) -> None:
         _LOG.warning("Asynchronous research failed: code=%s", code)
         self.researchFailed.emit(investigation_id, artifact_id, code, message)
+        self.operationFailed.emit(code, message)
+
+    @Slot(int, int, object)
+    def _model_research_succeeded(
+        self,
+        investigation_id: int,
+        evidence_id: int,
+        result: object,
+    ) -> None:
+        self.stateChanged.emit(self._controller.get_bootstrap_state())
+        self.modelResearchCompleted.emit(investigation_id, evidence_id, result)
+
+    @Slot(int, int, str, str)
+    def _model_research_failed(
+        self,
+        investigation_id: int,
+        evidence_id: int,
+        code: str,
+        message: str,
+    ) -> None:
+        _LOG.warning("Asynchronous reviewed model research failed: code=%s", code)
+        self.modelResearchFailed.emit(investigation_id, evidence_id, code, message)
         self.operationFailed.emit(code, message)
 
     @Slot(int, object)
