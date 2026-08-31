@@ -29,3 +29,17 @@ class ApprovedOutboundRequest:
             f"erasure_ground={self.erasure_ground.value if self.erasure_ground else None!r}, "
             f"approved_at={self.approved_at!r})"
         )
+
+
+@dataclass(frozen=True, slots=True)
+class ApprovedOutboundRequestSummary:
+    """Non-content projection for listing approved requests without decrypting message text."""
+
+    id: int
+    case_id: int
+    recipient_name: str
+    recipient_email: str
+    legal_basis: str
+    identifier_ids: tuple[int, ...]
+    erasure_ground: ErasureGround | None
+    approved_at: str
