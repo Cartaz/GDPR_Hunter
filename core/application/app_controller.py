@@ -20,7 +20,12 @@ from core.domain.investigation import (
     EvidenceProvenance,
     Investigation,
 )
-from core.domain.rights import CaseRight, ErasureGround, ErasureGroundPolicy, RightPolicy
+from core.domain.rights import (
+    CaseRight,
+    ErasureGround,
+    ErasureGroundPolicy,
+    RightPolicy,
+)
 from core.domain.target import Target
 
 
