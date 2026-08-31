@@ -53,13 +53,10 @@ class RightsPolicy:
             ),
             request_points=(
                 "confirmation whether personal data are processed",
-                "access to and a copy of the personal data",
+                "access to the personal data",
                 "purposes and categories of processing",
                 "recipients or categories of recipients",
-                "retention period or the criteria used to determine it",
                 "available information about the source when data were not collected from the data subject",
-                "automated decision-making information where applicable",
-                "appropriate safeguards for relevant third-country or international-organisation transfers",
             ),
         ),
         CaseRight.ERASURE: RightPolicy(
