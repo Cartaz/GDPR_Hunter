@@ -168,8 +168,9 @@ class CaseService:
         if schedule is None:
             return None
         assessment = self.extension_notice_assessment(case)
-        if assessment is None:
-            return schedule.initial_due_on
         if assessment is ExtensionNoticeAssessment.TIMELY:
             return schedule.extended_due_on
-        return None
+        # No extension, or an extension whose timeliness still requires calendar
+        # review: keep the initial deadline active instead of silently granting
+        # the controller the extended period.
+        return schedule.initial_due_on
