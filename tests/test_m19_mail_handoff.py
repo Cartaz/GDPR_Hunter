@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
 import pytest
 
@@ -208,15 +208,17 @@ def test_delivery_event_table_is_append_only_and_schema_v8(tmp_path) -> None:
 
 
 def test_mailto_url_uses_rfc_6068_encoding_for_approved_content() -> None:
+    recipient = "privacy&tag=plus+test@example.test"
     subject = "GDPR request — Alice + Example"
     body = "Line one\nLine two & more? yes=1"
-    url = build_mailto_url("privacy@example.test", subject, body)
+    url = build_mailto_url(recipient, subject, body)
     encoded = url.toEncoded().data().decode("ascii")
     parsed = urlsplit(encoded)
     query = parse_qs(parsed.query, keep_blank_values=True)
 
     assert parsed.scheme == "mailto"
-    assert parsed.path == "privacy@example.test"
+    assert unquote(parsed.path) == recipient
+    assert "privacy%26tag%3Dplus+test@example.test" in encoded
     assert "%2B" in encoded
     assert "%0D%0A" in encoded
     assert query["subject"] == [subject]
