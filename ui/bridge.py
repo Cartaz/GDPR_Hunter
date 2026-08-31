@@ -72,9 +72,16 @@ class Bridge(QObject):
     def createCase(self, target_id: int, right: str) -> dict[str, object]:
         return self._mutate(lambda: self._controller.create_case(target_id, right))
 
-    @Slot(int, str, result="QVariant")
-    def submitCase(self, case_id: int, received_on: str) -> dict[str, object]:
-        return self._mutate(lambda: self._controller.submit_case(case_id, received_on))
+    @Slot(int, str, str, result="QVariant")
+    def submitCase(
+        self,
+        case_id: int,
+        received_on: str,
+        jurisdiction_code: str,
+    ) -> dict[str, object]:
+        return self._mutate(
+            lambda: self._controller.submit_case(case_id, received_on, jurisdiction_code)
+        )
 
     @Slot(int, str, result="QVariant")
     def recordCaseExtension(self, case_id: int, notified_on: str) -> dict[str, object]:
