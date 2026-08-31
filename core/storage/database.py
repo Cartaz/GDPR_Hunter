@@ -17,7 +17,7 @@ class UnsupportedSchemaVersion(DatabaseSchemaError):
 class Database:
     """Own SQLite connection setup, lifecycle, schema compatibility, migrations, and transactions."""
 
-    CURRENT_SCHEMA_VERSION = 6
+    CURRENT_SCHEMA_VERSION = 7
 
     def __init__(self, path: Path) -> None:
         self._path = path
@@ -109,6 +109,7 @@ class Database:
             self._create_case_schema_v6(connection)
             self._create_investigation_schema_v4(connection)
             self._create_outbound_audit_schema_v5(connection)
+            self._create_approved_outbound_request_schema_v7(connection)
             connection.execute(
                 """
                 INSERT INTO schema_meta(id, schema_version, created_at, last_migrated_at)
@@ -139,6 +140,11 @@ class Database:
         if from_version == 5:
             self._migrate_v5_to_v6(connection)
             return 6
+        if from_version == 6:
+            with connection:
+                self._create_approved_outbound_request_schema_v7(connection)
+                self._set_schema_version(connection, expected=6, target=7)
+            return 7
         raise UnsupportedSchemaVersion(f"No migration path from database schema version {from_version}")
 
     @staticmethod
@@ -465,6 +471,47 @@ class Database:
             BEFORE DELETE ON outbound_audit
             BEGIN
                 SELECT RAISE(ABORT, 'outbound audit is append-only');
+            END
+            """,
+        )
+        for statement in statements:
+            connection.execute(statement)
+
+    @staticmethod
+    def _create_approved_outbound_request_schema_v7(connection: sqlite3.Connection) -> None:
+        statements = (
+            """
+            CREATE TABLE approved_outbound_requests (
+                id INTEGER PRIMARY KEY,
+                case_id INTEGER NOT NULL REFERENCES cases(id) ON DELETE RESTRICT,
+                recipient_name TEXT NOT NULL,
+                recipient_email_enc BLOB NOT NULL,
+                subject_enc BLOB NOT NULL,
+                body_enc BLOB NOT NULL,
+                legal_basis TEXT NOT NULL,
+                identifier_ids_json TEXT NOT NULL,
+                erasure_ground TEXT CHECK (
+                    erasure_ground IS NULL OR erasure_ground IN (
+                        'NO_LONGER_NECESSARY', 'WITHDRAWN_CONSENT', 'OBJECTION_NO_OVERRIDE',
+                        'UNLAWFUL_PROCESSING', 'LEGAL_OBLIGATION', 'CHILD_INFORMATION_SOCIETY'
+                    )
+                ),
+                approved_at TEXT NOT NULL
+            )
+            """,
+            "CREATE INDEX idx_approved_outbound_requests_case_id ON approved_outbound_requests(case_id, id)",
+            """
+            CREATE TRIGGER approved_outbound_requests_no_update
+            BEFORE UPDATE ON approved_outbound_requests
+            BEGIN
+                SELECT RAISE(ABORT, 'approved outbound requests are append-only');
+            END
+            """,
+            """
+            CREATE TRIGGER approved_outbound_requests_no_delete
+            BEFORE DELETE ON approved_outbound_requests
+            BEGIN
+                SELECT RAISE(ABORT, 'approved outbound requests are append-only');
             END
             """,
         )

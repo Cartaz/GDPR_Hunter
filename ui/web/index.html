@@ -95,7 +95,7 @@
             <div class="stack-form compact-form" aria-labelledby="model-review-title">
               <strong id="model-review-title">Model proposal review</strong>
               <p class="muted">Evidence is sent only after explicit approval. Model output remains inert until you accept a Python-owned proposal.</p>
-              <button id="model-analysis-button" type="button">Generate model proposals</button>
+              <button id="model-analysis-button" class="action-button" type="button">Generate model proposals</button>
               <div id="model-proposal-list" class="record-list" aria-live="polite"></div>
             </div>
 
@@ -126,9 +126,16 @@
           <label for="case-right">Right for new cases</label>
           <select id="case-right" aria-describedby="right-summary"></select>
           <p id="right-summary" class="muted policy-summary"></p>
-          <label for="case-erasure-ground">Article 17 ground for erasure previews</label>
+          <label for="case-erasure-ground">Article 17 ground for erasure requests</label>
           <select id="case-erasure-ground" aria-describedby="erasure-ground-summary"></select>
-          <p id="erasure-ground-summary" class="muted policy-summary">Used only when previewing an erasure request. It is temporary until a future dispatch is explicitly approved.</p>
+          <p id="erasure-ground-summary" class="muted policy-summary">Used only for Article 17 requests. The selected ground becomes part of an approved payload only after explicit approval.</p>
+
+          <fieldset id="request-identifier-fieldset" class="identifier-options">
+            <legend>Identifiers to disclose</legend>
+            <div id="request-identifier-options" class="identifier-option-list"></div>
+            <p class="muted policy-summary">Nothing from the Identity Vault is inserted automatically. Select only the identifiers needed to help the controller locate the relevant records.</p>
+          </fieldset>
+
           <label for="case-jurisdiction">Controller action jurisdiction</label>
           <input id="case-jurisdiction" maxlength="2" autocomplete="off" placeholder="IT" aria-describedby="jurisdiction-summary">
           <p id="jurisdiction-summary" class="muted policy-summary">Enter the two-letter country code for the place where the controller must act. It is snapshotted when submission is recorded; unsupported or incomplete local calendars remain explicitly reviewable.</p>
@@ -141,7 +148,8 @@
             <input id="request-preview-subject" readonly>
             <label for="request-preview-body">Body</label>
             <textarea id="request-preview-body" rows="16" readonly></textarea>
-            <p class="muted">Preview only. GDPR Hunter has not sent or queued this message.</p>
+            <button id="approve-request-button" class="action-button" type="button">Approve exact payload</button>
+            <p class="muted">Approval stores an encrypted, immutable copy of exactly this Python-generated recipient, subject and body for a future outbound attempt. Nothing has been sent, queued or handed to an external mail client.</p>
           </div>
         </article>
       </section>
@@ -157,6 +165,25 @@
               <button type="submit">Save</button>
             </div>
           </form>
+
+          <form id="identifier-form" class="stack-form compact-form">
+            <label for="identifier-kind">Identifier type</label>
+            <select id="identifier-kind">
+              <option value="EMAIL">Email</option>
+              <option value="PHONE">Phone</option>
+              <option value="ADDRESS">Address</option>
+              <option value="USERNAME">Username</option>
+              <option value="PROFILE_URL">Profile URL</option>
+              <option value="FULL_NAME">Full name</option>
+              <option value="CUSTOM">Custom</option>
+            </select>
+            <label for="identifier-value">Value</label>
+            <input id="identifier-value" autocomplete="off" required placeholder="alice@example.com">
+            <label for="identifier-label">Label</label>
+            <input id="identifier-label" autocomplete="off" placeholder="Optional context, e.g. old account">
+            <button type="submit">Add encrypted identifier</button>
+          </form>
+          <div id="identifier-list" class="record-list" aria-live="polite"></div>
         </article>
 
         <article class="card">

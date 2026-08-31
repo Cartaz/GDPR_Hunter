@@ -69,15 +69,18 @@ class CaseService:
         case_id: int,
         *,
         erasure_ground: ErasureGround | None = None,
+        identifier_ids: tuple[int, ...] = (),
     ) -> RequestPreview:
         case = self.get_case(case_id)
         identity = self._identity_service.get_identity()
         target = self._target_service.get_target(case.target_id)
+        disclosed_identifiers = self._identity_service.identifiers_for_disclosure(identifier_ids)
         return self._request_composer.compose(
             case,
             identity,
             target,
             erasure_ground=erasure_ground,
+            disclosed_identifiers=disclosed_identifiers,
         )
 
     def submit_case(

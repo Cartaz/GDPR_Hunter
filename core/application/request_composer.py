@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from core.domain.case import Case
-from core.domain.identity import Identity
+from core.domain.identity import Identifier, Identity
 from core.domain.rights import CaseRight, ErasureGround, RightsPolicy
 from core.domain.target import Target
 
@@ -31,6 +31,7 @@ class RequestComposer:
         target: Target,
         *,
         erasure_ground: ErasureGround | None = None,
+        disclosed_identifiers: tuple[Identifier, ...] = (),
     ) -> RequestPreview:
         if case.id is None:
             raise RuntimeError("Persisted case has no id")
@@ -42,7 +43,7 @@ class RequestComposer:
         if case.right is CaseRight.ACCESS_PROVENANCE:
             self._reject_unused_erasure_ground(erasure_ground)
             subject = f"GDPR Article 15 access request — {display_name}"
-            body = self._access_body(display_name, target.name)
+            body = self._access_body(display_name, target.name, disclosed_identifiers)
         elif case.right is CaseRight.ERASURE:
             if erasure_ground is None:
                 raise ValueError("Select the Article 17 ground before previewing an erasure request")
@@ -53,11 +54,12 @@ class RequestComposer:
                 target.name,
                 ground.article,
                 ground.summary,
+                disclosed_identifiers,
             )
         elif case.right is CaseRight.DIRECT_MARKETING_OBJECTION:
             self._reject_unused_erasure_ground(erasure_ground)
             subject = f"GDPR Article 21 direct marketing objection — {display_name}"
-            body = self._direct_marketing_body(display_name, target.name)
+            body = self._direct_marketing_body(display_name, target.name, disclosed_identifiers)
         else:
             raise ValueError("Legacy case has no supported GDPR request composition")
 
@@ -76,13 +78,18 @@ class RequestComposer:
             raise ValueError("Article 17 erasure grounds apply only to erasure cases")
 
     @staticmethod
-    def _access_body(display_name: str, target_name: str) -> str:
+    def _access_body(
+        display_name: str,
+        target_name: str,
+        disclosed_identifiers: tuple[Identifier, ...],
+    ) -> str:
         return "\n".join(
             (
                 f"Dear {target_name} Privacy Team,",
                 "",
                 f"My name is {display_name}. I am exercising my right of access under Article 15 GDPR.",
                 "",
+                *RequestComposer._identifier_disclosure_lines(disclosed_identifiers),
                 "Please confirm whether you process personal data concerning me. If you do, please provide:",
                 "- a copy of the personal data undergoing processing;",
                 "- the purposes of the processing and the categories of personal data concerned;",
@@ -105,6 +112,7 @@ class RequestComposer:
         target_name: str,
         ground_article: str,
         ground_summary: str,
+        disclosed_identifiers: tuple[Identifier, ...],
     ) -> str:
         return "\n".join(
             (
@@ -112,6 +120,7 @@ class RequestComposer:
                 "",
                 f"My name is {display_name}. I am exercising my right to erasure under Article 17 GDPR.",
                 "",
+                *RequestComposer._identifier_disclosure_lines(disclosed_identifiers),
                 f"The ground I rely on is {ground_article}: {ground_summary}",
                 "",
                 "Please erase the personal data concerning me without undue delay where the conditions of Article 17 are met and confirm the action taken.",
@@ -123,18 +132,44 @@ class RequestComposer:
         )
 
     @staticmethod
-    def _direct_marketing_body(display_name: str, target_name: str) -> str:
+    def _direct_marketing_body(
+        display_name: str,
+        target_name: str,
+        disclosed_identifiers: tuple[Identifier, ...],
+    ) -> str:
         return "\n".join(
             (
                 f"Dear {target_name} Privacy Team,",
                 "",
                 f"My name is {display_name}. Pursuant to Article 21(2) GDPR, I object to the processing of personal data concerning me for direct marketing purposes, including profiling to the extent that it is related to such direct marketing.",
                 "",
+                *RequestComposer._identifier_disclosure_lines(disclosed_identifiers),
                 "Under Article 21(3), please stop processing my personal data for those direct-marketing purposes and confirm that this objection has been recorded and applied.",
                 "",
                 RequestComposer._common_closing(display_name),
             )
         )
+
+    @staticmethod
+    def _identifier_disclosure_lines(identifiers: tuple[Identifier, ...]) -> tuple[str, ...]:
+        if not identifiers:
+            return ()
+        lines = [
+            "To help you locate the relevant records, I choose to disclose the following identifiers for this request:",
+        ]
+        for identifier in identifiers:
+            kind = identifier.kind.value.replace("_", " ").title()
+            label = " ".join(identifier.label.split()) if identifier.label else ""
+            value = " ".join(identifier.value.split())
+            description = f"{kind} ({label})" if label else kind
+            lines.append(f"- {description}: {value}")
+        lines.extend(
+            (
+                "Please use these identifiers only as needed to identify the records relevant to this request.",
+                "",
+            )
+        )
+        return tuple(lines)
 
     @staticmethod
     def _common_closing(display_name: str) -> str:

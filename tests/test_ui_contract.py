@@ -92,24 +92,52 @@ def test_case_submission_requires_explicit_jurisdiction_without_location_inferen
     assert "location" not in submit_slot
 
 
-def test_request_preview_is_read_only_and_python_composed():
+def test_request_preview_is_read_only_python_composed_and_identifier_opt_in():
     html = (ROOT / "ui" / "web" / "index.html").read_text(encoding="utf-8")
     javascript = (ROOT / "ui" / "web" / "js" / "app.js").read_text(encoding="utf-8")
     bridge = (ROOT / "ui" / "bridge.py").read_text(encoding="utf-8")
 
     assert 'id="request-preview-body"' in html
     assert 'id="case-erasure-ground"' in html
-    assert "backend.previewCaseRequest(caseItem.id, erasureGround" in javascript
-    preview_slot = bridge.split("def previewCaseRequest", 1)[1].split("def submitCase", 1)[0]
+    assert 'id="request-identifier-options"' in html
+    assert "Nothing from the Identity Vault is inserted automatically" in html
+    assert "backend.previewCaseRequest(caseItem.id, erasureGround, identifierIds" in javascript
+    preview_slot = bridge.split("def previewCaseRequest", 1)[1].split("def approveCaseRequest", 1)[0]
     assert "case_id: int" in preview_slot
     assert "erasure_ground: str" in preview_slot
+    assert "identifier_ids: object" in preview_slot
     assert "subject" not in preview_slot
     assert "body" not in preview_slot
     assert "recipient" not in preview_slot
     assert "approved_by_user" not in preview_slot
+
+
+def test_request_approval_cannot_supply_or_override_outbound_payload_from_javascript():
+    html = (ROOT / "ui" / "web" / "index.html").read_text(encoding="utf-8")
+    javascript = (ROOT / "ui" / "web" / "js" / "app.js").read_text(encoding="utf-8")
+    bridge = (ROOT / "ui" / "bridge.py").read_text(encoding="utf-8")
+
+    assert 'id="approve-request-button"' in html
+    assert "Nothing has been sent, queued or handed to an external mail client." in html
+    assert "backend.approveCaseRequest(" in javascript
+    approval_call = javascript.split("backend.approveCaseRequest(", 1)[1].split(");", 1)[0]
+    assert "context.caseId" in approval_call
+    assert "context.erasureGround" in approval_call
+    assert "context.identifierIds" in approval_call
+    assert "approved" in approval_call
+    assert "requestPreviewSubjectNode.value" not in approval_call
+    assert "requestPreviewBodyNode.value" not in approval_call
+
+    approval_slot = bridge.split("def approveCaseRequest", 1)[1].split("def submitCase", 1)[0]
+    assert "case_id: int" in approval_slot
+    assert "erasure_ground: str" in approval_slot
+    assert "identifier_ids: object" in approval_slot
+    assert "approved_by_user: bool" in approval_slot
+    assert "subject" not in approval_slot
+    assert "body" not in approval_slot
+    assert "recipient" not in approval_slot
     assert "def sendCase" not in bridge
     assert "def dispatch" not in bridge
-    assert "Preview only. GDPR Hunter has not sent or queued this message." in html
 
 
 def test_research_bridge_exposes_semantic_async_action_not_network_primitive():
