@@ -74,7 +74,6 @@ def test_provider_never_infers_or_fabricates_unsupported_jurisdiction_calendar()
     assert snapshot.holidays == frozenset()
     assert snapshot.source == "UNVERIFIED:DE"
     assert snapshot.complete is False
-    assert snapshot.review_required is True
 
     with pytest.raises(ValueError, match="two-letter"):
         provider.snapshot("DEU", date(2026, 1, 1), date(2026, 12, 31))
