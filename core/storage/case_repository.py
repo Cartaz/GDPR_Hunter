@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from datetime import date
 
-from core.domain.case import Case, CaseEvent, CaseStatus
+from core.domain.case import Case, CaseDeadlineSnapshot, CaseEvent, CaseStatus
 from core.domain.rights import CaseRight
 from core.storage.database import Database
 
@@ -20,9 +21,16 @@ class CaseRepository:
                 """
                 INSERT INTO cases(
                     identity_id, target_id, right_type, status,
-                    received_on, extension_notified_on, created_at, updated_at
+                    received_on, extension_notified_on,
+                    deadline_jurisdiction, initial_due_on, extended_due_on,
+                    holiday_dates_json, holiday_source, holiday_calendar_complete,
+                    created_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, NULL, NULL, datetime('now'), datetime('now'))
+                VALUES (
+                    ?, ?, ?, ?, NULL, NULL,
+                    NULL, NULL, NULL, NULL, NULL, NULL,
+                    datetime('now'), datetime('now')
+                )
                 """,
                 (identity_id, target_id, right.value, CaseStatus.DRAFT.value),
             )
@@ -49,17 +57,36 @@ class CaseRepository:
             rows = connection.execute("SELECT * FROM cases ORDER BY created_at DESC, id DESC").fetchall()
         return [self._case_from_row(row) for row in rows]
 
-    def submit(self, case_id: int, expected: CaseStatus, received_on: date) -> Case:
+    def submit(
+        self,
+        case_id: int,
+        expected: CaseStatus,
+        received_on: date,
+        deadline_snapshot: CaseDeadlineSnapshot,
+    ) -> Case:
+        holiday_dates_json = json.dumps(
+            [item.isoformat() for item in deadline_snapshot.holiday_dates],
+            separators=(",", ":"),
+        )
         with self._database.transaction() as connection:
             cursor = connection.execute(
                 """
                 UPDATE cases
-                SET status = ?, received_on = ?, updated_at = datetime('now')
+                SET status = ?, received_on = ?,
+                    deadline_jurisdiction = ?, initial_due_on = ?, extended_due_on = ?,
+                    holiday_dates_json = ?, holiday_source = ?, holiday_calendar_complete = ?,
+                    updated_at = datetime('now')
                 WHERE id = ? AND status = ? AND received_on IS NULL
                 """,
                 (
                     CaseStatus.AWAITING_RESPONSE.value,
                     received_on.isoformat(),
+                    deadline_snapshot.jurisdiction_code,
+                    deadline_snapshot.initial_due_on.isoformat(),
+                    deadline_snapshot.extended_due_on.isoformat(),
+                    holiday_dates_json,
+                    deadline_snapshot.holiday_source,
+                    int(deadline_snapshot.holiday_calendar_complete),
                     case_id,
                     expected.value,
                 ),
@@ -154,6 +181,42 @@ class CaseRepository:
                 if row["extension_notified_on"] is not None
                 else None
             ),
+            deadline_snapshot=CaseRepository._deadline_snapshot_from_row(row),
+        )
+
+    @staticmethod
+    def _deadline_snapshot_from_row(row: sqlite3.Row) -> CaseDeadlineSnapshot | None:
+        fields = (
+            row["deadline_jurisdiction"],
+            row["initial_due_on"],
+            row["extended_due_on"],
+            row["holiday_dates_json"],
+            row["holiday_source"],
+            row["holiday_calendar_complete"],
+        )
+        if all(value is None for value in fields):
+            return None
+        if any(value is None for value in fields):
+            raise RuntimeError("Persisted case deadline snapshot is incomplete")
+        try:
+            raw_dates = json.loads(str(row["holiday_dates_json"]))
+            if not isinstance(raw_dates, list) or not all(isinstance(item, str) for item in raw_dates):
+                raise ValueError
+            holiday_dates = tuple(date.fromisoformat(item) for item in raw_dates)
+            initial_due_on = date.fromisoformat(str(row["initial_due_on"]))
+            extended_due_on = date.fromisoformat(str(row["extended_due_on"]))
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise RuntimeError("Persisted case deadline snapshot is malformed") from exc
+        complete = int(row["holiday_calendar_complete"])
+        if complete not in {0, 1}:
+            raise RuntimeError("Persisted holiday calendar completeness is invalid")
+        return CaseDeadlineSnapshot(
+            jurisdiction_code=str(row["deadline_jurisdiction"]),
+            initial_due_on=initial_due_on,
+            extended_due_on=extended_due_on,
+            holiday_dates=holiday_dates,
+            holiday_source=str(row["holiday_source"]),
+            holiday_calendar_complete=bool(complete),
         )
 
     @staticmethod
