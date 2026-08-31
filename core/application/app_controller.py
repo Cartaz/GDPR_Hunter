@@ -62,7 +62,7 @@ class AppController:
         cases = self._case_service.list_cases()
         investigations = self._investigation_service.list_investigations()
         approvals = self._request_approval_service.list_summaries()
-        delivery_events = self._outbound_delivery_service.list_events()
+        delivery_events = self._outbound_delivery_service.list_latest_events()
         return {
             "identity": {
                 "displayName": identity.display_name,
