@@ -17,8 +17,10 @@ M16 establishes the deadline foundation required before any future real request 
 - the initial Italian provider encodes verified national statutory holidays from 2001 onward, including the restored 2 June holiday and, from 2026 onward, the new 4 October national holiday;
 - Italian local patronal holidays are deliberately not inferred, so the Italian calendar remains marked incomplete and requires review of the controller's actual place of action;
 - the calendar source/revision, jurisdiction, holiday dates and resulting one-month/three-month deadlines are persisted atomically at submission;
-- SQLite schema v6 rejects incomplete deadline snapshots and prevents an established snapshot from being modified later;
-- extension timeliness and displayed deadlines use the stored snapshot rather than recalculating historical Cases against a newer holiday provider;
+- the repository creates Draft Cases with the entire deadline snapshot unset and establishes all snapshot fields atomically on submission; SQLite rejects partial snapshot updates and prevents an established snapshot from being modified later;
+- extension notices cannot precede the recorded request receipt date;
+- a definitively late extension notice is rejected only when the stored holiday calendar is complete; incomplete calendars preserve the notice and keep manual legal-calendar review explicit instead of producing a false definitive rejection;
+- extension handling and displayed deadlines use the stored snapshot rather than recalculating historical Cases against a newer holiday provider;
 - pre-M16 submitted Cases remain readable without invented historical metadata and are clearly treated as requiring holiday/jurisdiction review.
 
 The deadline model follows GDPR Article 12(3) calendar-month timing together with Council Regulation (EEC, Euratom) No 1182/71: where the relevant last day is a Saturday, Sunday or public holiday, the period ends on the next working day. For public holidays, the relevant Member State is the one in which the action is to be performed. Calendar datasets are therefore treated as legal inputs with explicit provenance rather than generic locale data.
