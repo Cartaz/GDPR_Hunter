@@ -4,26 +4,26 @@ GDPR Hunter is a local-first desktop privacy application under active developmen
 
 ## Current status
 
-Milestone **M14 — Python-owned Proposal Review** is implemented on the current development branch. Model analysis now produces reviewable UI proposals whose authoritative payload remains owned by Python. The web frontend receives only display data plus an opaque token and can accept or discard a proposal only by returning that token.
+Milestone **M15 — Reviewed Research Proposals** is implemented on the current development branch. Model-generated research suggestions can now be executed only after explicit user review, through a Python-owned opaque proposal token. The model and JavaScript still cannot choose an outbound destination at execution time: Python resolves the referenced Evidence from canonical state and derives the HTTP(S) URL from its persisted value.
 
-M8 introduced bounded OpenAI-compatible inference without tools or direct application authority. M9 added strict inert `CLAIM` and `RESEARCH_EVIDENCE` proposals. M10 added encrypted append-only outbound auditing. M11 added explicitly reviewed, atomic Claim acceptance. M12 connected bounded Investigation Evidence to inference and strict proposal parsing without mutation. M13 moved model analysis onto an owned Qt worker and wired configured inference into production.
+M8 introduced bounded OpenAI-compatible inference without tools or direct application authority. M9 added strict inert `CLAIM` and `RESEARCH_EVIDENCE` proposals. M10 added encrypted append-only outbound auditing. M11 added explicitly reviewed, atomic Claim acceptance. M12 connected bounded Investigation Evidence to inference and strict proposal parsing without mutation. M13 moved model analysis onto an owned Qt worker and wired configured inference into production. M14 added Python-owned opaque proposal identities and one-use Claim review.
 
-M14 closes the review loop without trusting JavaScript as a proposal source:
+M15 extends that review boundary to research without giving the model network authority:
 
-- `ProposalReviewService` is the single owner of generated, ephemeral model proposals;
-- each generated proposal receives a cryptographically random opaque token;
-- a new analysis invalidates previous tokens for the same Investigation;
-- JavaScript receives proposal display fields and the opaque token, but cannot submit statement, confidence or Evidence IDs for acceptance;
-- `acceptModelClaim(token, approved_by_user)` resolves the original Python-owned proposal before invoking the M11 atomic acceptance path;
-- successful Claim acceptance consumes the token, so replay is rejected;
-- denied approval, forged tokens and expired tokens do not mutate canonical state;
-- `RESEARCH_EVIDENCE` proposals cannot be accepted as Claims;
-- proposals can be explicitly discarded, which also consumes their token;
-- the frontend now exposes asynchronous model analysis and review controls while retaining only temporary presentation state.
+- `ProposalReviewService` remains the owner of generated, ephemeral proposals and resolves a reviewed `RESEARCH_EVIDENCE` token only to its Python-owned Investigation and Evidence IDs;
+- JavaScript calls `executeModelResearchProposal(token, approved_by_user)` and cannot submit a URL, destination, rationale or Evidence ID to the privileged action;
+- explicit user approval is required before a research proposal can be resolved;
+- the accepted research token is consumed for one approved attempt, so replay is rejected even if the eventual network operation fails;
+- `InvestigationService` verifies that the referenced Evidence belongs to the Investigation and derives the destination exclusively from the persisted Evidence value;
+- only HTTP(S) Evidence values are researchable through this path;
+- ordinary user-initiated Artifact research and reviewed model research share the same bounded fetch, redirect validation, deduplication, encrypted snapshot persistence and cancellation path;
+- reviewed model research is audited through `EgressPolicy` with `actor=MODEL`, while direct user research remains `actor=USER`;
+- `ResearchRunner` remains the single Qt owner of asynchronous research work, so neither bridge nor JavaScript owns threads or network mechanics;
+- fetched documents remain REFERENCE Artifacts and their derived Evidence remains subject to the same deterministic analysis and provenance rules as existing public research.
 
-`InvestigationService` remains the sole owner of Investigation/Evidence/Claim mutations. `ProposalReviewService` owns only ephemeral proposal identity and review resolution. Research and inference both require `EgressPolicy` authorization and enter the durable outbound audit. The model has no filesystem, browser, arbitrary networking, command execution or generic canonical-state authority.
+`InvestigationService` remains the sole owner of Investigation/Evidence/Claim mutations. `ProposalReviewService` owns only ephemeral proposal identity and reviewed resolution. Research and inference both require `EgressPolicy` authorization and enter the durable outbound audit. The model has no filesystem, browser, arbitrary networking, command execution, generic network primitive or generic canonical-state authority.
 
-Supported GDPR Case workflows are Article 15 access/provenance, Article 17 erasure and Article 21(2)-(3) direct-marketing objection. Automatic jurisdiction-specific holiday resolution, reviewed research-proposal execution, exposure discovery, automated delivery, monitoring and escalation remain future work.
+Supported GDPR Case workflows are Article 15 access/provenance, Article 17 erasure and Article 21(2)-(3) direct-marketing objection. Automatic jurisdiction-specific holiday resolution, exposure discovery, automated delivery, monitoring and escalation remain future work.
 
 ## Architecture
 
@@ -34,18 +34,18 @@ Supported GDPR Case workflows are Article 15 access/provenance, Article 17 erasu
 - SQLite for operational persistence and append-only outbound audit
 - Python owns canonical state and business logic
 - Sensitive personal/investigative data and audit destinations are encrypted before persistence
-- `InvestigationService` owns Investigation/Evidence/Claim mutations
+- `InvestigationService` owns Investigation/Evidence/Claim mutations and semantic research orchestration
 - `InvestigationRepository` provides atomic persistence operations for aggregate changes
 - `ArtifactAnalyzer` is deterministic and has no network authority
 - `ResearchService` owns bounded public-network mechanics behind `NetworkPolicy`
 - `EgressPolicy` owns outbound authorization; `OutboundAuditRepository` owns durable audit persistence
-- `ResearchRunner` owns Qt threading for public research
+- `ResearchRunner` owns Qt threading for both direct and reviewed model research
 - `InferenceEndpoint` and `InferenceService` own configured model-server transport and bounded JSON inference
 - `ModelProposalParser` validates untrusted model JSON into inert typed proposals
 - `ModelAnalysisService` owns bounded Evidence-to-proposal orchestration without mutation
 - `ModelAnalysisRunner` owns Qt threading for that orchestration
-- `ProposalReviewService` owns opaque proposal identities and one-use review resolution
-- reviewed Claim acceptance remains explicit and separate from proposal generation
+- `ProposalReviewService` owns opaque proposal identities and one-use reviewed resolution
+- reviewed Claim acceptance and reviewed research execution remain explicit and separate from proposal generation
 
 ## Install
 
@@ -66,8 +66,9 @@ chmod +x install.sh
 .venv/bin/python -m compileall -q main.py config core ui tests
 .venv/bin/python -m pytest
 .venv/bin/ruff check main.py config core ui tests
+.venv/bin/pip-audit -r requirements.txt -r requirements-dev.txt
 ```
 
 ## Security posture
 
-The application is designed around local-first processing, explicit outbound-data control, encrypted sensitive persistence, append-only audit records, immutable Artifact metadata, evidence provenance, deterministic parsing, SSRF-resistant bounded research, owned asynchronous execution, bounded inference/context, strict model-output validation, opaque one-use proposal identities, explicit review gates and separation between LLM proposals and canonical application state.
+The application is designed around local-first processing, explicit outbound-data control, encrypted sensitive persistence, append-only audit records, immutable Artifact metadata, evidence provenance, deterministic parsing, SSRF-resistant bounded research, owned asynchronous execution, bounded inference/context, strict model-output validation, opaque one-use proposal identities, explicit review gates and separation between LLM proposals and canonical application state. Reviewed research proposals do not carry executable destinations: outbound targets are reconstructed from persisted Evidence under Python policy control.

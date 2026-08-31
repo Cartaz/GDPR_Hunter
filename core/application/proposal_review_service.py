@@ -5,7 +5,11 @@ from dataclasses import dataclass
 
 from core.application.investigation_service import InvestigationService
 from core.domain.investigation import Claim
-from core.domain.model_proposal import ClaimProposal, ModelProposal
+from core.domain.model_proposal import (
+    ClaimProposal,
+    ModelProposal,
+    ResearchEvidenceProposal,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -13,6 +17,12 @@ class ReviewProposal:
     token: str
     investigation_id: int
     proposal: ModelProposal
+
+
+@dataclass(frozen=True, slots=True)
+class ReviewedResearchRequest:
+    investigation_id: int
+    evidence_id: int
 
 
 class ProposalReviewService:
@@ -45,12 +55,7 @@ class ProposalReviewService:
         return tuple(registered)
 
     def accept_claim(self, token: str, *, approved_by_user: bool) -> Claim:
-        normalized = token.strip()
-        if not normalized:
-            raise ValueError("Proposal token is required")
-        reviewed = self._proposals.get(normalized)
-        if reviewed is None:
-            raise LookupError("Proposal token is unknown, expired, or already used")
+        normalized, reviewed = self._require_reviewed(token)
         if not isinstance(reviewed.proposal, ClaimProposal):
             raise TypeError("Only claim proposals can be accepted as claims")
 
@@ -62,12 +67,37 @@ class ProposalReviewService:
         self._consume(normalized, reviewed.investigation_id)
         return claim
 
+    def accept_research(
+        self,
+        token: str,
+        *,
+        approved_by_user: bool,
+    ) -> ReviewedResearchRequest:
+        normalized, reviewed = self._require_reviewed(token)
+        if not isinstance(reviewed.proposal, ResearchEvidenceProposal):
+            raise TypeError("Only research proposals can be accepted for research")
+        if not approved_by_user:
+            raise PermissionError("Model research requires explicit user review and approval")
+
+        request = ReviewedResearchRequest(
+            investigation_id=reviewed.investigation_id,
+            evidence_id=reviewed.proposal.evidence_id,
+        )
+        self._consume(normalized, reviewed.investigation_id)
+        return request
+
     def discard(self, token: str) -> None:
+        normalized, reviewed = self._require_reviewed(token)
+        self._consume(normalized, reviewed.investigation_id)
+
+    def _require_reviewed(self, token: str) -> tuple[str, ReviewProposal]:
         normalized = token.strip()
+        if not normalized:
+            raise ValueError("Proposal token is required")
         reviewed = self._proposals.get(normalized)
         if reviewed is None:
             raise LookupError("Proposal token is unknown, expired, or already used")
-        self._consume(normalized, reviewed.investigation_id)
+        return normalized, reviewed
 
     def _invalidate_investigation(self, investigation_id: int) -> None:
         for token in self._tokens_by_investigation.pop(investigation_id, set()):
