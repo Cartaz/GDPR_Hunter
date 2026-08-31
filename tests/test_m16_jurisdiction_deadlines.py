@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 from datetime import date
 
 import pytest
@@ -59,6 +60,7 @@ def test_italian_calendar_encodes_verified_2026_national_holidays_but_requires_l
     assert date(2026, 6, 2) in holidays
     assert date(2026, 10, 4) in holidays
     assert date(2026, 12, 8) in holidays
+    assert date(2025, 10, 4) not in calendar.holidays(2025)
     assert calendar.complete is False
     assert "L151/2025" in calendar.source
 
@@ -136,3 +138,50 @@ def test_deadline_snapshot_does_not_change_when_calendar_provider_changes(tmp_pa
     assert schedule is not None
     assert schedule.initial_due_on == date(2026, 6, 3)
     assert schedule.public_holiday_review_required is False
+
+
+def test_sqlite_rejects_partial_or_rewritten_deadline_snapshots(tmp_path):
+    database = Database(tmp_path / "snapshot.sqlite3")
+    database.initialize()
+    with database.transaction() as connection:
+        connection.execute(
+            "INSERT INTO identities(id, display_name_enc, created_at, updated_at) VALUES (1, NULL, 'now', 'now')"
+        )
+        connection.execute(
+            "INSERT INTO targets(id, name, domain, privacy_email, created_at, updated_at) VALUES (1, 'Target', NULL, NULL, 'now', 'now')"
+        )
+        connection.execute(
+            """
+            INSERT INTO cases(
+                id, identity_id, target_id, right_type, status,
+                received_on, extension_notified_on, created_at, updated_at
+            )
+            VALUES (1, 1, 1, 'ERASURE', 'DRAFT', NULL, NULL, 'now', 'now')
+            """
+        )
+
+    with pytest.raises(sqlite3.IntegrityError, match="snapshot must be complete"):
+        with database.transaction() as connection:
+            connection.execute(
+                "UPDATE cases SET deadline_jurisdiction = 'IT' WHERE id = 1"
+            )
+
+    with database.transaction() as connection:
+        connection.execute(
+            """
+            UPDATE cases
+            SET deadline_jurisdiction = 'IT',
+                initial_due_on = '2026-06-03',
+                extended_due_on = '2026-08-03',
+                holiday_dates_json = '[\"2026-06-02\"]',
+                holiday_source = 'TEST:v1',
+                holiday_calendar_complete = 1
+            WHERE id = 1
+            """
+        )
+
+    with pytest.raises(sqlite3.IntegrityError, match="snapshot is immutable"):
+        with database.transaction() as connection:
+            connection.execute(
+                "UPDATE cases SET initial_due_on = '2026-06-04' WHERE id = 1"
+            )
