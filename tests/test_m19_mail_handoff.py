@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import sqlite3
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
-from PySide6.QtCore import QUrlQuery
 
 from core.application.case_service import CaseService
 from core.application.deadline_engine import DeadlineEngine
@@ -128,6 +128,7 @@ def test_handoff_uses_exact_approved_payload_even_after_identity_changes(tmp_pat
     ]
     assert delivery_events[0].attempt_id == delivery_events[1].attempt_id == result.attempt_id
     assert all(item.approved_request_id == approved.id for item in delivery_events)
+    assert events.list_latest_events() == [delivery_events[0]]
 
     audit_entries = audit.list_entries()
     assert len(audit_entries) == 1
@@ -210,12 +211,14 @@ def test_mailto_url_preserves_approved_recipient_subject_and_body() -> None:
     subject = "GDPR request — Alice + Example"
     body = "Line one\nLine two & more? yes=1"
     url = build_mailto_url("privacy@example.test", subject, body)
-    query = QUrlQuery(url)
+    encoded = url.toEncoded().data().decode("ascii")
+    parsed = urlsplit(encoded)
+    query = parse_qs(parsed.query, keep_blank_values=True)
 
-    assert url.scheme() == "mailto"
-    assert url.path() == "privacy@example.test"
-    assert query.queryItemValue("subject") == subject
-    assert query.queryItemValue("body") == body
+    assert parsed.scheme == "mailto"
+    assert parsed.path == "privacy@example.test"
+    assert query["subject"] == [subject]
+    assert query["body"] == [body]
 
 
 def test_frontend_handoff_can_supply_only_approved_request_id_and_approval() -> None:
