@@ -49,10 +49,30 @@ def test_model_claim_review_uses_opaque_token_not_frontend_provenance_payload():
 
     assert "backend.acceptModelClaim(token, approved" in javascript
     assert "def acceptModelClaim(self, proposal_token: str, approved_by_user: bool)" in bridge
-    assert "proposal_token" in bridge
-    assert "statement" not in bridge.split("def acceptModelClaim", 1)[1].split("def discardModelProposal", 1)[0]
-    assert "confidence" not in bridge.split("def acceptModelClaim", 1)[1].split("def discardModelProposal", 1)[0]
-    assert "evidence_ids" not in bridge.split("def acceptModelClaim", 1)[1].split("def discardModelProposal", 1)[0]
+    claim_slot = bridge.split("def acceptModelClaim", 1)[1].split(
+        "def executeModelResearchProposal", 1
+    )[0]
+    assert "proposal_token" in claim_slot
+    assert "statement" not in claim_slot
+    assert "confidence" not in claim_slot
+    assert "evidence_ids" not in claim_slot
+
+
+def test_reviewed_model_research_uses_only_opaque_token_and_approval_from_frontend():
+    javascript = (ROOT / "ui" / "web" / "js" / "app.js").read_text(encoding="utf-8")
+    bridge = (ROOT / "ui" / "bridge.py").read_text(encoding="utf-8")
+
+    assert "backend.executeModelResearchProposal(token, approved" in javascript
+    assert "Research evidence" in javascript
+    research_slot = bridge.split("def executeModelResearchProposal", 1)[1].split(
+        "def discardModelProposal", 1
+    )[0]
+    assert "proposal_token: str" in research_slot
+    assert "approved_by_user: bool" in research_slot
+    assert "source_url" not in research_slot
+    assert "destination" not in research_slot
+    assert "rationale" not in research_slot
+    assert "evidence_id:" not in research_slot
 
 
 def test_research_bridge_exposes_semantic_async_action_not_network_primitive():
@@ -62,6 +82,7 @@ def test_research_bridge_exposes_semantic_async_action_not_network_primitive():
 
     assert "researchArtifactUrls" in javascript
     assert "researchArtifactUrls" in bridge
+    assert "executeModelResearchProposal" in bridge
     assert "fetchUrl" not in bridge
     assert "http.client" not in bridge
     assert "QThread" not in bridge
