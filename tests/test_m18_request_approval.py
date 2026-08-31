@@ -9,6 +9,7 @@ from core.application.deadline_engine import DeadlineEngine
 from core.application.identity_service import IdentityService
 from core.application.request_approval_service import RequestApprovalService
 from core.application.target_service import TargetService
+from core.domain.case import CaseStatus
 from core.domain.identity import IdentifierKind
 from core.domain.rights import CaseRight, ErasureGround, RightsPolicy
 from core.storage.approved_outbound_request_repository import ApprovedOutboundRequestRepository
@@ -92,7 +93,7 @@ def test_approval_requires_explicit_user_approval_without_partial_persistence(tm
 
 def test_approval_requires_draft_case_and_recipient_email(tmp_path) -> None:
     _database, _identity, cases, approvals, case = create_case(tmp_path)
-    cases.transition_case(case.id, cases.get_case(case.id).status.CANCELLED)
+    cases.transition_case(case.id, CaseStatus.CANCELLED)
 
     with pytest.raises(ValueError, match="Only a draft case"):
         approvals.approve(case.id, approved_by_user=True)
