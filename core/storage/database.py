@@ -17,7 +17,7 @@ class UnsupportedSchemaVersion(DatabaseSchemaError):
 class Database:
     """Own SQLite connection setup, lifecycle, schema compatibility, migrations, and transactions."""
 
-    CURRENT_SCHEMA_VERSION = 5
+    CURRENT_SCHEMA_VERSION = 6
 
     def __init__(self, path: Path) -> None:
         self._path = path
@@ -106,7 +106,7 @@ class Database:
             )
             connection.execute("CREATE INDEX idx_identifiers_identity_id ON identifiers(identity_id)")
             self._create_targets_schema(connection)
-            self._create_case_schema_v3(connection)
+            self._create_case_schema_v6(connection)
             self._create_investigation_schema_v4(connection)
             self._create_outbound_audit_schema_v5(connection)
             connection.execute(
@@ -136,6 +136,9 @@ class Database:
                 self._create_outbound_audit_schema_v5(connection)
                 self._set_schema_version(connection, expected=4, target=5)
             return 5
+        if from_version == 5:
+            self._migrate_v5_to_v6(connection)
+            return 6
         raise UnsupportedSchemaVersion(f"No migration path from database schema version {from_version}")
 
     @staticmethod
@@ -213,8 +216,30 @@ class Database:
 
     @staticmethod
     def _create_case_schema_v3(connection: sqlite3.Connection) -> None:
+        Database._create_case_schema(connection, include_deadline_snapshot=False)
+
+    @staticmethod
+    def _create_case_schema_v6(connection: sqlite3.Connection) -> None:
+        Database._create_case_schema(connection, include_deadline_snapshot=True)
+
+    @staticmethod
+    def _create_case_schema(
+        connection: sqlite3.Connection,
+        *,
+        include_deadline_snapshot: bool,
+    ) -> None:
+        deadline_columns = """
+                deadline_jurisdiction TEXT,
+                initial_due_on TEXT,
+                extended_due_on TEXT,
+                holiday_dates_json TEXT,
+                holiday_source TEXT,
+                holiday_calendar_complete INTEGER CHECK (
+                    holiday_calendar_complete IS NULL OR holiday_calendar_complete IN (0, 1)
+                ),
+        """ if include_deadline_snapshot else ""
         statements = (
-            """
+            f"""
             CREATE TABLE cases (
                 id INTEGER PRIMARY KEY,
                 identity_id INTEGER NOT NULL REFERENCES identities(id) ON DELETE RESTRICT,
@@ -227,6 +252,7 @@ class Database:
                 ),
                 received_on TEXT,
                 extension_notified_on TEXT,
+                {deadline_columns}
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             )
@@ -481,6 +507,21 @@ class Database:
             connection.execute("CREATE INDEX idx_case_events_case_id ON case_events(case_id, id)")
             self._create_case_event_triggers(connection)
             self._set_schema_version(connection, expected=2, target=3)
+
+    def _migrate_v5_to_v6(self, connection: sqlite3.Connection) -> None:
+        with connection:
+            connection.execute("ALTER TABLE cases ADD COLUMN deadline_jurisdiction TEXT")
+            connection.execute("ALTER TABLE cases ADD COLUMN initial_due_on TEXT")
+            connection.execute("ALTER TABLE cases ADD COLUMN extended_due_on TEXT")
+            connection.execute("ALTER TABLE cases ADD COLUMN holiday_dates_json TEXT")
+            connection.execute("ALTER TABLE cases ADD COLUMN holiday_source TEXT")
+            connection.execute(
+                """
+                ALTER TABLE cases ADD COLUMN holiday_calendar_complete INTEGER
+                CHECK (holiday_calendar_complete IS NULL OR holiday_calendar_complete IN (0, 1))
+                """
+            )
+            self._set_schema_version(connection, expected=5, target=6)
 
     @staticmethod
     def _existing_schema_version(connection: sqlite3.Connection) -> int | None:
