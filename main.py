@@ -23,9 +23,11 @@ from core.application.model_proposal_parser import ModelProposalParser
 from core.application.network_policy import NetworkPolicy
 from core.application.paths import default_app_paths
 from core.application.proposal_review_service import ProposalReviewService
+from core.application.request_approval_service import RequestApprovalService
 from core.application.research_service import ResearchService
 from core.application.target_service import TargetService
 from core.domain.rights import RightsPolicy
+from core.storage.approved_outbound_request_repository import ApprovedOutboundRequestRepository
 from core.storage.artifact_store import ArtifactStore
 from core.storage.case_repository import CaseRepository
 from core.storage.database import Database
@@ -95,6 +97,10 @@ def build_controller() -> tuple[
         DeadlineEngine(),
         HolidayCalendarProvider(),
     )
+    request_approval_service = RequestApprovalService(
+        case_service,
+        ApprovedOutboundRequestRepository(database, sensitive_store),
+    )
     network_policy = NetworkPolicy()
     research_service = ResearchService(network_policy)
     egress_policy = EgressPolicy(OutboundAuditRepository(database, sensitive_store))
@@ -115,7 +121,13 @@ def build_controller() -> tuple[
         model=settings.inference_model,
     )
     return (
-        AppController(identity_service, target_service, case_service, investigation_service),
+        AppController(
+            identity_service,
+            target_service,
+            case_service,
+            investigation_service,
+            request_approval_service,
+        ),
         model_analysis_service,
         ProposalReviewService(investigation_service),
         settings,
