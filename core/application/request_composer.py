@@ -138,13 +138,9 @@ class RequestComposer:
 
     @staticmethod
     def _common_closing(display_name: str) -> str:
-        return "\n".join(
-            (
-                "Please respond without undue delay and in any event within one month of receipt, subject to Article 12(3) GDPR.",
-                "If you decide not to act on this request, please provide the reasons and the information required by Article 12(4).",
-                "If you have reasonable doubts about my identity, please request only the additional information necessary to confirm it in accordance with Article 12(6).",
-                "",
-                "Kind regards,",
-                display_name,
-            )
+        return (
+            "Please respond without undue delay and in any event within one month of receipt, subject to Article 12(3) GDPR.\n"
+            "If you decide not to act on this request, please provide the reasons and the information required by Article 12(4).\n"
+            "If you have reasonable doubts about my identity, please request only the additional information necessary to confirm it in accordance with Article 12(6).\n\n"
+            f"Kind regards,\n{display_name}"
         )
