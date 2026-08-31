@@ -33,12 +33,11 @@ class ApprovedOutboundRequest:
 
 @dataclass(frozen=True, slots=True)
 class ApprovedOutboundRequestSummary:
-    """Non-content projection for listing approved requests without decrypting message text."""
+    """Non-content projection for listing approved requests without decrypting message data."""
 
     id: int
     case_id: int
     recipient_name: str
-    recipient_email: str
     legal_basis: str
     identifier_ids: tuple[int, ...]
     erasure_ground: ErasureGround | None

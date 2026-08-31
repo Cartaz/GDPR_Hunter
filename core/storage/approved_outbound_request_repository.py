@@ -65,25 +65,13 @@ class ApprovedOutboundRequestRepository:
         with self._database.connection_scope() as connection:
             rows = connection.execute(
                 """
-                SELECT id, case_id, recipient_name, recipient_email_enc, legal_basis,
+                SELECT id, case_id, recipient_name, legal_basis,
                        identifier_ids_json, erasure_ground, approved_at
                 FROM approved_outbound_requests
                 ORDER BY approved_at DESC, id DESC
                 """
             ).fetchall()
         return [self._summary_from_row(row) for row in rows]
-
-    def list_for_case(self, case_id: int) -> list[ApprovedOutboundRequest]:
-        with self._database.connection_scope() as connection:
-            rows = connection.execute(
-                """
-                SELECT * FROM approved_outbound_requests
-                WHERE case_id = ?
-                ORDER BY approved_at DESC, id DESC
-                """,
-                (case_id,),
-            ).fetchall()
-        return [self._from_row(row) for row in rows]
 
     @staticmethod
     def _metadata_from_row(row: sqlite3.Row) -> tuple[tuple[int, ...], ErasureGround | None]:
@@ -110,7 +98,6 @@ class ApprovedOutboundRequestRepository:
             id=int(row["id"]),
             case_id=int(row["case_id"]),
             recipient_name=str(row["recipient_name"]),
-            recipient_email=self._sensitive_store.decrypt_text(row["recipient_email_enc"]),
             legal_basis=str(row["legal_basis"]),
             identifier_ids=identifier_ids,
             erasure_ground=erasure_ground,

@@ -362,13 +362,12 @@ class AppController:
 
     @staticmethod
     def _approved_request_summary_dto(
-        request: ApprovedOutboundRequest | ApprovedOutboundRequestSummary,
+        request: ApprovedOutboundRequestSummary,
     ) -> dict[str, object]:
         return {
             "id": request.id,
             "caseId": request.case_id,
             "recipientName": request.recipient_name,
-            "recipientEmail": request.recipient_email,
             "legalBasis": request.legal_basis,
             "identifierIds": list(request.identifier_ids),
             "erasureGround": request.erasure_ground.value if request.erasure_ground else None,
@@ -377,9 +376,18 @@ class AppController:
 
     @staticmethod
     def _approved_request_dto(request: ApprovedOutboundRequest) -> dict[str, object]:
-        result = AppController._approved_request_summary_dto(request)
-        result.update({"subject": request.subject, "body": request.body})
-        return result
+        return {
+            "id": request.id,
+            "caseId": request.case_id,
+            "recipientName": request.recipient_name,
+            "recipientEmail": request.recipient_email,
+            "subject": request.subject,
+            "body": request.body,
+            "legalBasis": request.legal_basis,
+            "identifierIds": list(request.identifier_ids),
+            "erasureGround": request.erasure_ground.value if request.erasure_ground else None,
+            "approvedAt": request.approved_at,
+        }
 
     @staticmethod
     def _right_dto(policy: RightPolicy) -> dict[str, object]:

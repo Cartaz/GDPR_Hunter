@@ -155,6 +155,23 @@ def test_approval_persists_exact_encrypted_payload_and_selected_metadata(tmp_pat
     assert preview.subject not in repr(reloaded)
 
 
+def test_approval_summaries_do_not_require_message_decryption(tmp_path) -> None:
+    database, _identity, _cases, approvals, case = create_case(tmp_path)
+    approved = approvals.approve(case.id, approved_by_user=True)
+    assert approved.id is not None
+
+    metadata_only_repository = ApprovedOutboundRequestRepository(
+        database,
+        SensitiveStore(b"b" * 32),
+    )
+    summaries = metadata_only_repository.list_summaries()
+
+    assert [item.id for item in summaries] == [approved.id]
+    assert not hasattr(summaries[0], "recipient_email")
+    assert not hasattr(summaries[0], "subject")
+    assert not hasattr(summaries[0], "body")
+
+
 def test_approved_payloads_are_append_only_and_reapproval_preserves_history(tmp_path) -> None:
     database, identity, _cases, approvals, case = create_case(tmp_path)
     first_identifier = identity.add_identifier(IdentifierKind.EMAIL, "first@example.test")
@@ -175,7 +192,8 @@ def test_approved_payloads_are_append_only_and_reapproval_preserves_history(tmp_
 
     assert first.id != second.id
     assert first.body != second.body
-    assert [item.id for item in approvals.list_for_case(case.id)] == [second.id, first.id]
+    case_summaries = [item for item in approvals.list_summaries() if item.case_id == case.id]
+    assert [item.id for item in case_summaries] == [second.id, first.id]
 
     with pytest.raises(sqlite3.IntegrityError), database.transaction() as connection:
         connection.execute(

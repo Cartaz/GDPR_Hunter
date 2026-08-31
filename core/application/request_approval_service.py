@@ -70,7 +70,3 @@ class RequestApprovalService:
 
     def list_summaries(self) -> list[ApprovedOutboundRequestSummary]:
         return self._repository.list_summaries()
-
-    def list_for_case(self, case_id: int) -> list[ApprovedOutboundRequest]:
-        self._case_service.get_case(case_id)
-        return self._repository.list_for_case(case_id)
