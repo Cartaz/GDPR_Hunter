@@ -200,7 +200,7 @@ def test_model_research_rejects_non_url_or_cross_investigation_evidence_before_e
     foreign = add_url_evidence(service, second.id)
     assert non_url.id is not None and foreign.id is not None
 
-    with pytest.raises(ValueError, match="HTTP\(S\) URL"):
+    with pytest.raises(ValueError, match=r"HTTP\(S\) URL"):
         service.research_model_evidence(first.id, non_url.id, approved_by_user=True)
     with pytest.raises(LookupError, match="not attached"):
         service.research_model_evidence(first.id, foreign.id, approved_by_user=True)
@@ -271,11 +271,12 @@ def test_bridge_executes_research_token_as_async_model_evidence_request(tmp_path
         }
 
         deadline = time.monotonic() + 2.0
-        while completed.count() == 0 and time.monotonic() < deadline:
+        while (completed.count() == 0 or runner.is_busy) and time.monotonic() < deadline:
             application.processEvents()
             time.sleep(0.01)
 
         assert completed.count() == 1
+        assert runner.is_busy is False
         assert controller.calls == [(investigation.id, evidence.id, True)]
         assert controller.worker_thread_id is not None
         assert controller.worker_thread_id != caller_thread_id
