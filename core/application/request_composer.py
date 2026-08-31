@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 from core.domain.case import Case
 from core.domain.identity import Identity
-from core.domain.rights import CaseRight, RightsPolicy
+from core.domain.rights import CaseRight, ErasureGround, RightsPolicy
 from core.domain.target import Target
 
 
@@ -19,12 +19,19 @@ class RequestPreview:
 
 
 class RequestComposer:
-    """Compose deterministic GDPR request text from canonical application state."""
+    """Compose deterministic GDPR request text without network or model authority."""
 
     def __init__(self, rights_policy: RightsPolicy) -> None:
         self._rights_policy = rights_policy
 
-    def compose(self, case: Case, identity: Identity, target: Target) -> RequestPreview:
+    def compose(
+        self,
+        case: Case,
+        identity: Identity,
+        target: Target,
+        *,
+        erasure_ground: ErasureGround | None = None,
+    ) -> RequestPreview:
         if case.id is None:
             raise RuntimeError("Persisted case has no id")
         display_name = identity.display_name.strip() if identity.display_name else ""
@@ -33,14 +40,13 @@ class RequestComposer:
         policy = self._rights_policy.get(case.right)
 
         if case.right is CaseRight.ACCESS_PROVENANCE:
+            self._reject_unused_erasure_ground(erasure_ground)
             subject = f"GDPR Article 15 access request — {display_name}"
             body = self._access_body(display_name, target.name)
         elif case.right is CaseRight.ERASURE:
-            if case.erasure_ground is None:
-                raise ValueError(
-                    "This erasure case has no Article 17 ground; recreate it with a specific erasure ground"
-                )
-            ground = self._rights_policy.get_erasure_ground(case.erasure_ground)
+            if erasure_ground is None:
+                raise ValueError("Select the Article 17 ground before previewing an erasure request")
+            ground = self._rights_policy.get_erasure_ground(erasure_ground)
             subject = f"GDPR Article 17 erasure request — {display_name}"
             body = self._erasure_body(
                 display_name,
@@ -49,6 +55,7 @@ class RequestComposer:
                 ground.summary,
             )
         elif case.right is CaseRight.DIRECT_MARKETING_OBJECTION:
+            self._reject_unused_erasure_ground(erasure_ground)
             subject = f"GDPR Article 21 direct marketing objection — {display_name}"
             body = self._direct_marketing_body(display_name, target.name)
         else:
@@ -62,6 +69,11 @@ class RequestComposer:
             body=body,
             legal_basis=policy.article,
         )
+
+    @staticmethod
+    def _reject_unused_erasure_ground(erasure_ground: ErasureGround | None) -> None:
+        if erasure_ground is not None:
+            raise ValueError("Article 17 erasure grounds apply only to erasure cases")
 
     @staticmethod
     def _access_body(display_name: str, target_name: str) -> str:
