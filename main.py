@@ -13,6 +13,7 @@ from core.application.artifact_analyzer import ArtifactAnalyzer
 from core.application.case_service import CaseService
 from core.application.deadline_engine import DeadlineEngine
 from core.application.egress_policy import EgressPolicy
+from core.application.holiday_calendar import HolidayCalendarProvider
 from core.application.identity_service import IdentityService
 from core.application.inference_endpoint import InferenceEndpoint, InferenceLocation
 from core.application.inference_service import InferenceService
@@ -92,6 +93,7 @@ def build_controller() -> tuple[
         target_service,
         RightsPolicy(),
         DeadlineEngine(),
+        HolidayCalendarProvider(),
     )
     network_policy = NetworkPolicy()
     research_service = ResearchService(network_policy)
