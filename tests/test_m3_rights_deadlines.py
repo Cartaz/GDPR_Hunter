@@ -78,21 +78,30 @@ def test_deadline_engine_rolls_weekends_and_supplied_public_holidays():
     assert with_holiday.public_holiday_review_required is False
 
 
-def test_submission_and_extension_keep_only_canonical_deadline_inputs(tmp_path):
+def test_submission_persists_immutable_jurisdiction_deadline_snapshot(tmp_path):
     database, target_service, case_service = build_case_service(tmp_path)
     target = target_service.create_target("Example Corp", "example.com")
     assert target.id is not None
 
     case = case_service.create_case(target.id, CaseRight.ACCESS_PROVENANCE)
     assert case.id is not None
-    submitted = case_service.submit_case(case.id, date(2026, 1, 31))
+    submitted = case_service.submit_case(case.id, date(2026, 1, 31), "it")
     schedule = case_service.deadline_for(submitted)
 
     assert submitted.status is CaseStatus.AWAITING_RESPONSE
     assert submitted.received_on == "2026-01-31"
+    assert submitted.deadline_snapshot is not None
+    assert submitted.deadline_snapshot.jurisdiction_code == "IT"
+    assert submitted.deadline_snapshot.initial_due_on == date(2026, 3, 2)
+    assert submitted.deadline_snapshot.extended_due_on == date(2026, 4, 30)
+    assert date(2026, 6, 2) in submitted.deadline_snapshot.holiday_dates
+    assert date(2026, 10, 4) in submitted.deadline_snapshot.holiday_dates
+    assert "L151/2025" in submitted.deadline_snapshot.holiday_source
+    assert submitted.deadline_snapshot.holiday_calendar_complete is False
     assert schedule is not None
     assert schedule.initial_due_on == date(2026, 3, 2)
     assert schedule.extended_due_on == date(2026, 4, 30)
+    assert schedule.public_holiday_review_required is True
 
     extended = case_service.record_extension(case.id, date(2026, 2, 28))
     assert extended.extension_notified_on == "2026-02-28"
@@ -103,21 +112,33 @@ def test_submission_and_extension_keep_only_canonical_deadline_inputs(tmp_path):
     ]
 
     with database.connection_scope() as connection:
-        columns = {row["name"] for row in connection.execute("PRAGMA table_info(cases)").fetchall()}
-    assert "initial_due_on" not in columns
-    assert "extended_due_on" not in columns
+        row = connection.execute(
+            """
+            SELECT deadline_jurisdiction, initial_due_on, extended_due_on,
+                   holiday_dates_json, holiday_source, holiday_calendar_complete
+            FROM cases WHERE id = ?
+            """,
+            (case.id,),
+        ).fetchone()
+    assert row is not None
+    assert row["deadline_jurisdiction"] == "IT"
+    assert row["initial_due_on"] == "2026-03-02"
+    assert row["extended_due_on"] == "2026-04-30"
+    assert "2026-10-04" in row["holiday_dates_json"]
+    assert "L151/2025" in row["holiday_source"]
+    assert row["holiday_calendar_complete"] == 0
 
 
-def test_late_extension_notice_is_rejected_without_mutation(tmp_path):
+def test_extension_notice_before_recorded_receipt_is_rejected_without_mutation(tmp_path):
     _database, target_service, case_service = build_case_service(tmp_path)
     target = target_service.create_target("Example Corp")
     assert target.id is not None
     case = case_service.create_case(target.id, CaseRight.ERASURE)
     assert case.id is not None
-    case_service.submit_case(case.id, date(2026, 1, 31))
+    case_service.submit_case(case.id, date(2026, 1, 31), "IT")
 
-    with pytest.raises(ValueError, match="within the initial one-month deadline"):
-        case_service.record_extension(case.id, date(2026, 3, 3))
+    with pytest.raises(ValueError, match="cannot precede"):
+        case_service.record_extension(case.id, date(2026, 1, 30))
 
     current = case_service.get_case(case.id)
     assert current.extension_notified_on is None

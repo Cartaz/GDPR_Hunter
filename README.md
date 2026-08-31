@@ -4,26 +4,31 @@ GDPR Hunter is a local-first desktop privacy application under active developmen
 
 ## Current status
 
-Milestone **M15 — Reviewed Research Proposals** is implemented on the current development branch. Model-generated research suggestions can now be executed only after explicit user review, through a Python-owned opaque proposal token. The model and JavaScript still cannot choose an outbound destination at execution time: Python resolves the referenced Evidence from canonical state and derives the HTTP(S) URL from its persisted value.
+Milestone **M16 — Jurisdiction-aware Deadline Snapshots** is implemented on the current development branch. A GDPR Case now records the controller-action jurisdiction explicitly when submission is recorded and persists the exact deadline/calendar snapshot used for that Case. Jurisdiction is never inferred from the user's location, IP address, Target domain or model output.
 
-M8 introduced bounded OpenAI-compatible inference without tools or direct application authority. M9 added strict inert `CLAIM` and `RESEARCH_EVIDENCE` proposals. M10 added encrypted append-only outbound auditing. M11 added explicitly reviewed, atomic Claim acceptance. M12 connected bounded Investigation Evidence to inference and strict proposal parsing without mutation. M13 moved model analysis onto an owned Qt worker and wired configured inference into production. M14 added Python-owned opaque proposal identities and one-use Claim review.
+M8 introduced bounded OpenAI-compatible inference without tools or direct application authority. M9 added strict inert `CLAIM` and `RESEARCH_EVIDENCE` proposals. M10 added encrypted append-only outbound auditing. M11 added explicitly reviewed, atomic Claim acceptance. M12 connected bounded Investigation Evidence to inference and strict proposal parsing without mutation. M13 moved model analysis onto an owned Qt worker and wired configured inference into production. M14 added Python-owned opaque proposal identities and one-use Claim review. M15 added explicitly reviewed research-proposal execution while keeping outbound destinations under Python policy control.
 
-M15 extends that review boundary to research without giving the model network authority:
+M16 establishes the deadline foundation required before any future real request dispatch:
 
-- `ProposalReviewService` remains the owner of generated, ephemeral proposals and resolves a reviewed `RESEARCH_EVIDENCE` token only to its Python-owned Investigation and Evidence IDs;
-- JavaScript calls `executeModelResearchProposal(token, approved_by_user)` and cannot submit a URL, destination, rationale or Evidence ID to the privileged action;
-- explicit user approval is required before a research proposal can be resolved;
-- the accepted research token is consumed for one approved attempt, so replay is rejected even if the eventual network operation fails;
-- `InvestigationService` verifies that the referenced Evidence belongs to the Investigation and derives the destination exclusively from the persisted Evidence value;
-- only HTTP(S) Evidence values are researchable through this path;
-- ordinary user-initiated Artifact research and reviewed model research share the same bounded fetch, redirect validation, deduplication, encrypted snapshot persistence and cancellation path;
-- reviewed model research is audited through `EgressPolicy` with `actor=MODEL`, while direct user research remains `actor=USER`;
-- `ResearchRunner` remains the single Qt owner of asynchronous research work, so neither bridge nor JavaScript owns threads or network mechanics;
-- fetched documents remain REFERENCE Artifacts and their derived Evidence remains subject to the same deterministic analysis and provenance rules as existing public research.
+- the Case submission boundary requires an explicit two-letter controller-action jurisdiction;
+- jurisdiction belongs to the Case submission, not the Target registry, so multinational controllers can be handled without hidden Target-level assumptions;
+- `HolidayCalendarProvider` resolves deterministic, versioned holiday snapshots and never guesses a jurisdiction;
+- unsupported jurisdictions remain usable only as explicitly unverified calendars: no legal holidays are fabricated and `publicHolidayReviewRequired` stays true;
+- the initial Italian provider encodes verified national statutory holidays from 2001 onward, including the restored 2 June holiday and, from 2026 onward, the new 4 October national holiday;
+- Italian local patronal holidays are deliberately not inferred, so the Italian calendar remains marked incomplete and requires review of the controller's actual place of action;
+- the calendar source/revision, jurisdiction, holiday dates and resulting one-month/three-month deadlines are persisted atomically at submission;
+- the repository creates Draft Cases with the entire deadline snapshot unset and establishes all snapshot fields atomically on submission; SQLite rejects partial snapshot updates and prevents an established snapshot from being modified later;
+- extension notices cannot precede the recorded request receipt date;
+- a definitively late extension notice is rejected only when the stored holiday calendar is complete;
+- when an incomplete calendar makes timeliness uncertain, the notice is preserved for review but does not activate the three-month deadline: the initial calculated deadline remains active until the uncertainty is resolved;
+- extension handling and displayed deadlines use the stored snapshot rather than recalculating historical Cases against a newer holiday provider;
+- pre-M16 submitted Cases remain readable without invented historical metadata and are clearly treated as requiring holiday/jurisdiction review.
 
-`InvestigationService` remains the sole owner of Investigation/Evidence/Claim mutations. `ProposalReviewService` owns only ephemeral proposal identity and reviewed resolution. Research and inference both require `EgressPolicy` authorization and enter the durable outbound audit. The model has no filesystem, browser, arbitrary networking, command execution, generic network primitive or generic canonical-state authority.
+The deadline model follows GDPR Article 12(3) calendar-month timing together with Council Regulation (EEC, Euratom) No 1182/71: where the relevant last day is a Saturday, Sunday or public holiday, the period ends on the next working day. For public holidays, the relevant Member State is the one in which the action is to be performed. Calendar datasets are therefore treated as legal inputs with explicit provenance rather than generic locale data.
 
-Supported GDPR Case workflows are Article 15 access/provenance, Article 17 erasure and Article 21(2)-(3) direct-marketing objection. Automatic jurisdiction-specific holiday resolution, exposure discovery, automated delivery, monitoring and escalation remain future work.
+`InvestigationService` remains the sole owner of Investigation/Evidence/Claim mutations. `CaseService` owns Case lifecycle and deadline semantics. `HolidayCalendarProvider` owns jurisdiction-calendar lookup only; it does not infer jurisdiction or mutate Cases. `CaseRepository` persists the immutable deadline snapshot atomically with submission. The model has no filesystem, browser, arbitrary networking, command execution, generic network primitive, jurisdiction authority or generic canonical-state authority.
+
+Supported GDPR Case workflows are Article 15 access/provenance, Article 17 erasure and Article 21(2)-(3) direct-marketing objection. Verified complete multi-jurisdiction/local holiday calendars, exposure discovery, automated delivery, monitoring and escalation remain future work. No real GDPR request dispatch is implemented yet.
 
 ## Architecture
 
@@ -34,6 +39,10 @@ Supported GDPR Case workflows are Article 15 access/provenance, Article 17 erasu
 - SQLite for operational persistence and append-only outbound audit
 - Python owns canonical state and business logic
 - Sensitive personal/investigative data and audit destinations are encrypted before persistence
+- `CaseService` owns Case lifecycle and deadline semantics
+- `HolidayCalendarProvider` owns explicit jurisdiction-to-calendar resolution with source/version metadata
+- `DeadlineEngine` owns calendar-month arithmetic, working-day roll-forward and extension-timeliness assessment
+- `CaseRepository` atomically persists Case lifecycle changes and immutable deadline snapshots
 - `InvestigationService` owns Investigation/Evidence/Claim mutations and semantic research orchestration
 - `InvestigationRepository` provides atomic persistence operations for aggregate changes
 - `ArtifactAnalyzer` is deterministic and has no network authority
@@ -71,4 +80,4 @@ chmod +x install.sh
 
 ## Security posture
 
-The application is designed around local-first processing, explicit outbound-data control, encrypted sensitive persistence, append-only audit records, immutable Artifact metadata, evidence provenance, deterministic parsing, SSRF-resistant bounded research, owned asynchronous execution, bounded inference/context, strict model-output validation, opaque one-use proposal identities, explicit review gates and separation between LLM proposals and canonical application state. Reviewed research proposals do not carry executable destinations: outbound targets are reconstructed from persisted Evidence under Python policy control.
+The application is designed around local-first processing, explicit outbound-data control, encrypted sensitive persistence, append-only audit records, immutable Artifact metadata, evidence provenance, deterministic parsing, SSRF-resistant bounded research, owned asynchronous execution, bounded inference/context, strict model-output validation, opaque one-use proposal identities, explicit review gates and separation between LLM proposals and canonical application state. Reviewed research proposals do not carry executable destinations, and deadline jurisdiction is an explicit Case input rather than an inferred property. Historical deadline snapshots retain the legal/calendar inputs used when the Case was submitted.

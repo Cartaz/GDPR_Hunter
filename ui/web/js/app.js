@@ -12,6 +12,7 @@ const privacyEmailNode = document.getElementById("privacy-email");
 const targetListNode = document.getElementById("target-list");
 const caseListNode = document.getElementById("case-list");
 const caseRightNode = document.getElementById("case-right");
+const caseJurisdictionNode = document.getElementById("case-jurisdiction");
 const rightSummaryNode = document.getElementById("right-summary");
 const timelineTitleNode = document.getElementById("timeline-title");
 const timelineListNode = document.getElementById("timeline-list");
@@ -372,6 +373,23 @@ function renderCases(cases) {
       due.textContent = `Tracked deadline: ${caseItem.effectiveDueOn}${caseItem.extensionNotifiedOn ? " · extension recorded" : ""}`;
       info.appendChild(due);
     }
+    if (caseItem.deadlineJurisdiction) {
+      const jurisdiction = document.createElement("small");
+      const reviewState = caseItem.publicHolidayReviewRequired
+        ? "local/public-holiday review required"
+        : "holiday calendar complete";
+      jurisdiction.textContent = `Deadline jurisdiction: ${caseItem.deadlineJurisdiction} · ${reviewState}`;
+      info.appendChild(jurisdiction);
+      if (caseItem.holidayCalendarSource) {
+        const source = document.createElement("small");
+        source.textContent = `Calendar source: ${caseItem.holidayCalendarSource}`;
+        info.appendChild(source);
+      }
+    } else if (caseItem.receivedOn) {
+      const legacy = document.createElement("small");
+      legacy.textContent = "Legacy deadline · no jurisdiction/calendar snapshot";
+      info.appendChild(legacy);
+    }
     const actions = document.createElement("div");
     actions.className = "record-actions";
     actions.appendChild(makeButton("Timeline", () => loadTimeline(caseItem.id)));
@@ -416,8 +434,14 @@ function createCase(targetId) {
 
 function submitCase(caseId, receivedOn) {
   if (!backend || !receivedOn) return;
-  backend.submitCase(caseId, receivedOn, (response) => {
-    handleMutation(response, "Submission recorded and deadline calculated.");
+  const jurisdiction = caseJurisdictionNode.value.trim().toUpperCase();
+  if (!jurisdiction) {
+    setStatus("Enter the controller action jurisdiction before recording submission.", true);
+    caseJurisdictionNode.focus();
+    return;
+  }
+  backend.submitCase(caseId, receivedOn, jurisdiction, (response) => {
+    handleMutation(response, "Submission recorded with an immutable jurisdiction/deadline snapshot.");
     if (response?.ok) loadTimeline(caseId);
   });
 }
@@ -534,6 +558,9 @@ function connectBackend() {
 }
 
 caseRightNode.addEventListener("change", renderRightSummary);
+caseJurisdictionNode.addEventListener("input", () => {
+  caseJurisdictionNode.value = caseJurisdictionNode.value.toUpperCase();
+});
 modelAnalysisButton.addEventListener("click", requestModelAnalysis);
 
 nameForm.addEventListener("submit", (event) => {

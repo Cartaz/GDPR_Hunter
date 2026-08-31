@@ -75,6 +75,23 @@ def test_reviewed_model_research_uses_only_opaque_token_and_approval_from_fronte
     assert "evidence_id:" not in research_slot
 
 
+def test_case_submission_requires_explicit_jurisdiction_without_location_inference():
+    html = (ROOT / "ui" / "web" / "index.html").read_text(encoding="utf-8")
+    javascript = (ROOT / "ui" / "web" / "js" / "app.js").read_text(encoding="utf-8")
+    bridge = (ROOT / "ui" / "bridge.py").read_text(encoding="utf-8")
+
+    assert 'id="case-jurisdiction"' in html
+    assert "place where the controller must act" in html
+    assert "caseJurisdictionNode.value" in javascript
+    assert "backend.submitCase(caseId, receivedOn, jurisdiction" in javascript
+    assert "navigator.geolocation" not in javascript
+    assert "def submitCase(" in bridge
+    submit_slot = bridge.split("def submitCase", 1)[1].split("def recordCaseExtension", 1)[0]
+    assert "jurisdiction_code: str" in submit_slot
+    assert "target_domain" not in submit_slot
+    assert "location" not in submit_slot
+
+
 def test_research_bridge_exposes_semantic_async_action_not_network_primitive():
     javascript = (ROOT / "ui" / "web" / "js" / "app.js").read_text(encoding="utf-8")
     bridge = (ROOT / "ui" / "bridge.py").read_text(encoding="utf-8")

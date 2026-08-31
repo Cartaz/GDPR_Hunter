@@ -4,6 +4,13 @@ import calendar
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date, timedelta
+from enum import Enum
+
+
+class ExtensionNoticeAssessment(str, Enum):
+    TIMELY = "TIMELY"
+    REVIEW_REQUIRED = "REVIEW_REQUIRED"
+    LATE = "LATE"
 
 
 @dataclass(frozen=True, slots=True)
@@ -21,23 +28,33 @@ class DeadlineEngine:
         self,
         received_on: date,
         public_holidays: Iterable[date] | None = None,
+        *,
+        holiday_calendar_complete: bool | None = None,
     ) -> DeadlineSchedule:
         holidays = frozenset(public_holidays or ())
-        initial_nominal = self._add_months(received_on, 1)
-        extended_nominal = self._add_months(received_on, 3)
+        if holiday_calendar_complete is None:
+            holiday_calendar_complete = public_holidays is not None
+        initial_nominal, extended_nominal = self.nominal_due_dates(received_on)
         return DeadlineSchedule(
             received_on=received_on,
             initial_due_on=self._next_working_day(initial_nominal, holidays),
             extended_due_on=self._next_working_day(extended_nominal, holidays),
-            public_holiday_review_required=public_holidays is None,
+            public_holiday_review_required=not holiday_calendar_complete,
         )
 
-    def extension_notice_is_timely(
-        self,
+    def nominal_due_dates(self, received_on: date) -> tuple[date, date]:
+        return self._add_months(received_on, 1), self._add_months(received_on, 3)
+
+    @staticmethod
+    def assess_extension_notice(
         notified_on: date,
         schedule: DeadlineSchedule,
-    ) -> bool:
-        return notified_on <= schedule.initial_due_on
+    ) -> ExtensionNoticeAssessment:
+        if notified_on <= schedule.initial_due_on:
+            return ExtensionNoticeAssessment.TIMELY
+        if schedule.public_holiday_review_required:
+            return ExtensionNoticeAssessment.REVIEW_REQUIRED
+        return ExtensionNoticeAssessment.LATE
 
     @staticmethod
     def _add_months(value: date, months: int) -> date:

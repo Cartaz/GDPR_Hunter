@@ -18,6 +18,27 @@ def test_database_enables_foreign_keys(tmp_path):
         connection.close()
 
 
+def test_current_schema_has_case_deadline_snapshot_columns(tmp_path):
+    database = Database(tmp_path / "test.sqlite3")
+    database.initialize()
+
+    with database.connection_scope() as connection:
+        version = connection.execute(
+            "SELECT schema_version FROM schema_meta WHERE id = 1"
+        ).fetchone()[0]
+        columns = {row["name"] for row in connection.execute("PRAGMA table_info(cases)").fetchall()}
+
+    assert version == 6
+    assert {
+        "deadline_jurisdiction",
+        "initial_due_on",
+        "extended_due_on",
+        "holiday_dates_json",
+        "holiday_source",
+        "holiday_calendar_complete",
+    } <= columns
+
+
 def test_orphan_identifier_is_rejected(tmp_path):
     database = Database(tmp_path / "test.sqlite3")
     database.initialize()
@@ -72,7 +93,7 @@ def test_v1_database_is_migrated_without_losing_existing_rows(tmp_path):
     database.initialize()
 
     with database.connection_scope() as migrated:
-        assert migrated.execute("SELECT schema_version FROM schema_meta WHERE id = 1").fetchone()[0] == 5
+        assert migrated.execute("SELECT schema_version FROM schema_meta WHERE id = 1").fetchone()[0] == 6
         assert migrated.execute("SELECT COUNT(*) FROM identities").fetchone()[0] == 1
         assert migrated.execute(
             "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN ('targets', 'cases', 'case_events')"
@@ -83,6 +104,11 @@ def test_v1_database_is_migrated_without_losing_existing_rows(tmp_path):
         assert migrated.execute(
             "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'outbound_audit'"
         ).fetchone()[0] == 1
+        case_columns = {
+            row["name"] for row in migrated.execute("PRAGMA table_info(cases)").fetchall()
+        }
+        assert "deadline_jurisdiction" in case_columns
+        assert "holiday_calendar_complete" in case_columns
 
 
 def test_v2_open_case_migrates_to_awaiting_response_without_data_loss(tmp_path):
@@ -158,17 +184,28 @@ def test_v2_open_case_migrates_to_awaiting_response_without_data_loss(tmp_path):
 
     with database.connection_scope() as migrated:
         case = migrated.execute(
-            "SELECT right_type, status, received_on, extension_notified_on FROM cases WHERE id = 1"
+            """
+            SELECT right_type, status, received_on, extension_notified_on,
+                   deadline_jurisdiction, initial_due_on, extended_due_on,
+                   holiday_dates_json, holiday_source, holiday_calendar_complete
+            FROM cases WHERE id = 1
+            """
         ).fetchone()
         event = migrated.execute(
             "SELECT from_status, to_status FROM case_events WHERE id = 1"
         ).fetchone()
-        assert migrated.execute("SELECT schema_version FROM schema_meta WHERE id = 1").fetchone()[0] == 5
+        assert migrated.execute("SELECT schema_version FROM schema_meta WHERE id = 1").fetchone()[0] == 6
         assert case is not None
         assert case["right_type"] == "UNSPECIFIED"
         assert case["status"] == "AWAITING_RESPONSE"
         assert case["received_on"] is None
         assert case["extension_notified_on"] is None
+        assert case["deadline_jurisdiction"] is None
+        assert case["initial_due_on"] is None
+        assert case["extended_due_on"] is None
+        assert case["holiday_dates_json"] is None
+        assert case["holiday_source"] is None
+        assert case["holiday_calendar_complete"] is None
         assert event["from_status"] == "DRAFT"
         assert event["to_status"] == "AWAITING_RESPONSE"
 

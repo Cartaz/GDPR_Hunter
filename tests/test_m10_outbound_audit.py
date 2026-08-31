@@ -17,7 +17,9 @@ from core.storage.sensitive_store import SensitiveStore
 TEST_KEY = b"a" * 32
 
 
-def test_v4_database_migrates_to_append_only_outbound_audit(tmp_path) -> None:
+def test_v4_database_migrates_through_current_schema_with_append_only_outbound_audit(
+    tmp_path,
+) -> None:
     path = tmp_path / "v4.sqlite3"
     connection = sqlite3.connect(path)
     try:
@@ -28,6 +30,21 @@ def test_v4_database_migrates_to_append_only_outbound_audit(tmp_path) -> None:
                 schema_version INTEGER NOT NULL,
                 created_at TEXT NOT NULL,
                 last_migrated_at TEXT NOT NULL
+            );
+            CREATE TABLE cases (
+                id INTEGER PRIMARY KEY,
+                identity_id INTEGER NOT NULL,
+                target_id INTEGER NOT NULL,
+                right_type TEXT NOT NULL CHECK (
+                    right_type IN ('UNSPECIFIED', 'ACCESS_PROVENANCE', 'ERASURE', 'DIRECT_MARKETING_OBJECTION')
+                ),
+                status TEXT NOT NULL CHECK (
+                    status IN ('DRAFT', 'AWAITING_RESPONSE', 'COMPLETED', 'CANCELLED')
+                ),
+                received_on TEXT,
+                extension_notified_on TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
             );
             INSERT INTO schema_meta VALUES (1, 4, 'old', 'old');
             """
@@ -40,10 +57,24 @@ def test_v4_database_migrates_to_append_only_outbound_audit(tmp_path) -> None:
     database.initialize()
 
     with database.connection_scope() as migrated:
-        assert migrated.execute("SELECT schema_version FROM schema_meta WHERE id = 1").fetchone()[0] == 5
+        assert (
+            migrated.execute("SELECT schema_version FROM schema_meta WHERE id = 1").fetchone()[0]
+            == Database.CURRENT_SCHEMA_VERSION
+        )
         assert migrated.execute(
             "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'outbound_audit'"
         ).fetchone()[0] == 1
+        case_columns = {
+            row["name"] for row in migrated.execute("PRAGMA table_info(cases)").fetchall()
+        }
+        assert {
+            "deadline_jurisdiction",
+            "initial_due_on",
+            "extended_due_on",
+            "holiday_dates_json",
+            "holiday_source",
+            "holiday_calendar_complete",
+        } <= case_columns
 
 
 def test_policy_persists_allowed_and_denied_decisions_with_encrypted_destination(tmp_path) -> None:

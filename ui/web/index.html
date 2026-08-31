@@ -126,7 +126,9 @@
           <label for="case-right">Right for new cases</label>
           <select id="case-right" aria-describedby="right-summary"></select>
           <p id="right-summary" class="muted policy-summary"></p>
-          <p class="muted">Record the date the controller received the request. Python calculates calendar-month deadlines; jurisdiction-specific public holidays still require review.</p>
+          <label for="case-jurisdiction">Controller action jurisdiction</label>
+          <input id="case-jurisdiction" maxlength="2" autocomplete="off" placeholder="IT" aria-describedby="jurisdiction-summary">
+          <p id="jurisdiction-summary" class="muted policy-summary">Enter the two-letter country code for the place where the controller must act. It is snapshotted when submission is recorded; unsupported or incomplete local calendars remain explicitly reviewable.</p>
           <div id="case-list" class="record-list" aria-live="polite"></div>
         </article>
       </section>

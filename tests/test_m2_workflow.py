@@ -63,7 +63,7 @@ def test_case_workflow_records_append_only_timeline(tmp_path):
     assert case.id is not None
     assert case.status is CaseStatus.DRAFT
 
-    submitted = case_service.submit_case(case.id, date(2026, 8, 25))
+    submitted = case_service.submit_case(case.id, date(2026, 8, 25), "IT")
     completed = case_service.transition_case(case.id, CaseStatus.COMPLETED)
     timeline = case_service.list_timeline(case.id)
 
@@ -106,4 +106,4 @@ def test_cancelled_case_is_terminal(tmp_path):
     assert cancelled.status is CaseStatus.CANCELLED
 
     with pytest.raises(ValueError, match="Invalid case transition"):
-        case_service.submit_case(case.id, date(2026, 8, 25))
+        case_service.submit_case(case.id, date(2026, 8, 25), "IT")
