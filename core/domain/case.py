@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from enum import StrEnum
 
 from core.domain.rights import CaseRight
@@ -27,6 +28,20 @@ def validate_case_transition(current: CaseStatus, target: CaseStatus) -> None:
 
 
 @dataclass(frozen=True, slots=True)
+class CaseDeadlineSnapshot:
+    jurisdiction_code: str
+    initial_due_on: date
+    extended_due_on: date
+    holiday_dates: tuple[date, ...]
+    holiday_source: str
+    holiday_calendar_complete: bool
+
+    @property
+    def public_holiday_review_required(self) -> bool:
+        return not self.holiday_calendar_complete
+
+
+@dataclass(frozen=True, slots=True)
 class Case:
     id: int | None
     identity_id: int
@@ -37,6 +52,7 @@ class Case:
     updated_at: str
     received_on: str | None = None
     extension_notified_on: str | None = None
+    deadline_snapshot: CaseDeadlineSnapshot | None = None
 
 
 @dataclass(frozen=True, slots=True)
