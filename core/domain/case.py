@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import date
 from enum import StrEnum
 
-from core.domain.rights import CaseRight, ErasureGround
+from core.domain.rights import CaseRight
 
 
 class CaseStatus(StrEnum):
@@ -50,7 +50,6 @@ class Case:
     status: CaseStatus
     created_at: str
     updated_at: str
-    erasure_ground: ErasureGround | None = None
     received_on: str | None = None
     extension_notified_on: str | None = None
     deadline_snapshot: CaseDeadlineSnapshot | None = None
