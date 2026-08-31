@@ -6,6 +6,7 @@ import sqlite3
 from PySide6.QtCore import QObject, QThread, Signal, Slot
 
 from core.application.app_controller import AppController
+from core.application.research_service import ResearchCancelled
 
 _LOG = logging.getLogger(__name__)
 
@@ -35,6 +36,14 @@ class _ResearchWorker(QObject):
                 self._investigation_id,
                 self._artifact_id,
                 approved_by_user=self._approved_by_user,
+                cancel_requested=QThread.currentThread().isInterruptionRequested,
+            )
+        except ResearchCancelled as exc:
+            self.failed.emit(
+                self._investigation_id,
+                self._artifact_id,
+                "CANCELLED",
+                str(exc),
             )
         except (ValueError, LookupError) as exc:
             self.failed.emit(
