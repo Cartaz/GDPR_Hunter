@@ -4,6 +4,13 @@ import calendar
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date, timedelta
+from enum import Enum
+
+
+class ExtensionNoticeAssessment(str, Enum):
+    TIMELY = "TIMELY"
+    REVIEW_REQUIRED = "REVIEW_REQUIRED"
+    LATE = "LATE"
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,12 +45,16 @@ class DeadlineEngine:
     def nominal_due_dates(self, received_on: date) -> tuple[date, date]:
         return self._add_months(received_on, 1), self._add_months(received_on, 3)
 
-    def extension_notice_is_timely(
-        self,
+    @staticmethod
+    def assess_extension_notice(
         notified_on: date,
         schedule: DeadlineSchedule,
-    ) -> bool:
-        return notified_on <= schedule.initial_due_on
+    ) -> ExtensionNoticeAssessment:
+        if notified_on <= schedule.initial_due_on:
+            return ExtensionNoticeAssessment.TIMELY
+        if schedule.public_holiday_review_required:
+            return ExtensionNoticeAssessment.REVIEW_REQUIRED
+        return ExtensionNoticeAssessment.LATE
 
     @staticmethod
     def _add_months(value: date, months: int) -> date:
