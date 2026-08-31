@@ -3,7 +3,10 @@ from __future__ import annotations
 import json
 import sqlite3
 
-from core.domain.outbound_request import ApprovedOutboundRequest
+from core.domain.outbound_request import (
+    ApprovedOutboundRequest,
+    ApprovedOutboundRequestSummary,
+)
 from core.domain.rights import ErasureGround
 from core.storage.database import Database
 from core.storage.sensitive_store import SensitiveStore
@@ -58,12 +61,17 @@ class ApprovedOutboundRequestRepository:
             ).fetchone()
         return self._from_row(row) if row is not None else None
 
-    def list_all(self) -> list[ApprovedOutboundRequest]:
+    def list_summaries(self) -> list[ApprovedOutboundRequestSummary]:
         with self._database.connection_scope() as connection:
             rows = connection.execute(
-                "SELECT * FROM approved_outbound_requests ORDER BY approved_at DESC, id DESC"
+                """
+                SELECT id, case_id, recipient_name, recipient_email_enc, legal_basis,
+                       identifier_ids_json, erasure_ground, approved_at
+                FROM approved_outbound_requests
+                ORDER BY approved_at DESC, id DESC
+                """
             ).fetchall()
-        return [self._from_row(row) for row in rows]
+        return [self._summary_from_row(row) for row in rows]
 
     def list_for_case(self, case_id: int) -> list[ApprovedOutboundRequest]:
         with self._database.connection_scope() as connection:
@@ -77,7 +85,8 @@ class ApprovedOutboundRequestRepository:
             ).fetchall()
         return [self._from_row(row) for row in rows]
 
-    def _from_row(self, row: sqlite3.Row) -> ApprovedOutboundRequest:
+    @staticmethod
+    def _metadata_from_row(row: sqlite3.Row) -> tuple[tuple[int, ...], ErasureGround | None]:
         try:
             raw_ids = json.loads(str(row["identifier_ids_json"]))
             if (
@@ -93,6 +102,23 @@ class ApprovedOutboundRequestRepository:
             )
         except (TypeError, ValueError, json.JSONDecodeError) as exc:
             raise RuntimeError("Persisted approved outbound request metadata is malformed") from exc
+        return tuple(raw_ids), erasure_ground
+
+    def _summary_from_row(self, row: sqlite3.Row) -> ApprovedOutboundRequestSummary:
+        identifier_ids, erasure_ground = self._metadata_from_row(row)
+        return ApprovedOutboundRequestSummary(
+            id=int(row["id"]),
+            case_id=int(row["case_id"]),
+            recipient_name=str(row["recipient_name"]),
+            recipient_email=self._sensitive_store.decrypt_text(row["recipient_email_enc"]),
+            legal_basis=str(row["legal_basis"]),
+            identifier_ids=identifier_ids,
+            erasure_ground=erasure_ground,
+            approved_at=str(row["approved_at"]),
+        )
+
+    def _from_row(self, row: sqlite3.Row) -> ApprovedOutboundRequest:
+        identifier_ids, erasure_ground = self._metadata_from_row(row)
         return ApprovedOutboundRequest(
             id=int(row["id"]),
             case_id=int(row["case_id"]),
@@ -101,7 +127,7 @@ class ApprovedOutboundRequestRepository:
             subject=self._sensitive_store.decrypt_text(row["subject_enc"]),
             body=self._sensitive_store.decrypt_text(row["body_enc"]),
             legal_basis=str(row["legal_basis"]),
-            identifier_ids=tuple(raw_ids),
+            identifier_ids=identifier_ids,
             erasure_ground=erasure_ground,
             approved_at=str(row["approved_at"]),
         )
