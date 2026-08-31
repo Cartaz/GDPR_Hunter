@@ -63,6 +63,12 @@ class Bridge(QObject):
         return self._mutate(lambda: self._controller.set_display_name(display_name))
 
     @Slot(str, str, str, result="QVariant")
+    def addIdentifier(self, kind: str, value: str, label: str) -> dict[str, object]:
+        return self._mutate(
+            lambda: self._controller.add_identifier(kind, value, label or None)
+        )
+
+    @Slot(str, str, str, result="QVariant")
     def createTarget(self, name: str, domain: str, privacy_email: str) -> dict[str, object]:
         return self._mutate(
             lambda: self._controller.create_target(name, domain or None, privacy_email or None)
@@ -72,10 +78,41 @@ class Bridge(QObject):
     def createCase(self, target_id: int, right: str) -> dict[str, object]:
         return self._mutate(lambda: self._controller.create_case(target_id, right))
 
-    @Slot(int, str, result="QVariant")
-    def previewCaseRequest(self, case_id: int, erasure_ground: str) -> dict[str, object]:
+    @Slot(int, str, object, result="QVariant")
+    def previewCaseRequest(
+        self,
+        case_id: int,
+        erasure_ground: str,
+        identifier_ids: object,
+    ) -> dict[str, object]:
         return self._read(
-            lambda: self._controller.preview_case_request(case_id, erasure_ground or None)
+            lambda: self._controller.preview_case_request(
+                case_id,
+                erasure_ground or None,
+                self._identifier_ids(identifier_ids),
+            )
+        )
+
+    @Slot(int, str, object, bool, result="QVariant")
+    def approveCaseRequest(
+        self,
+        case_id: int,
+        erasure_ground: str,
+        identifier_ids: object,
+        approved_by_user: bool,
+    ) -> dict[str, object]:
+        if not approved_by_user:
+            return self._fail(
+                "APPROVAL_REQUIRED",
+                "Persisting an outbound request payload requires explicit user approval",
+            )
+        return self._mutate(
+            lambda: self._controller.approve_case_request(
+                case_id,
+                erasure_ground or None,
+                self._identifier_ids(identifier_ids),
+                approved_by_user=True,
+            )
         )
 
     @Slot(int, str, str, result="QVariant")
@@ -356,6 +393,22 @@ class Bridge(QObject):
             "createdAt": claim.created_at,
             "updatedAt": claim.updated_at,
         }
+
+    @staticmethod
+    def _identifier_ids(value: object) -> tuple[int, ...]:
+        if not isinstance(value, list):
+            raise ValueError("Identifier disclosure selection must be a list")
+        result: list[int] = []
+        for item in value:
+            if (
+                isinstance(item, bool)
+                or not isinstance(item, (int, float))
+                or not float(item).is_integer()
+                or int(item) <= 0
+            ):
+                raise ValueError("Identifier disclosure ids must be positive integers")
+            result.append(int(item))
+        return tuple(result)
 
     def _read(self, operation):
         try:
