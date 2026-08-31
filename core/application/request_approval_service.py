@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 
 from core.application.case_service import CaseService
 from core.domain.case import CaseStatus
-from core.domain.outbound_request import ApprovedOutboundRequest
+from core.domain.outbound_request import ApprovedOutboundRequest, ApprovedOutboundRequestSummary
 from core.domain.rights import ErasureGround
 from core.storage.approved_outbound_request_repository import ApprovedOutboundRequestRepository
 
@@ -66,8 +66,8 @@ class RequestApprovalService:
             raise LookupError("Approved outbound request not found")
         return request
 
-    def list_all(self) -> list[ApprovedOutboundRequest]:
-        return self._repository.list_all()
+    def list_summaries(self) -> list[ApprovedOutboundRequestSummary]:
+        return self._repository.list_summaries()
 
     def list_for_case(self, case_id: int) -> list[ApprovedOutboundRequest]:
         self._case_service.get_case(case_id)
