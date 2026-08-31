@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import sqlite3
 
 from PySide6.QtCore import QObject, Signal, Slot
 
@@ -54,10 +55,6 @@ class Bridge(QObject):
     @Slot(str, result="QVariant")
     def setDisplayName(self, display_name: str) -> dict[str, object]:
         return self._mutate(lambda: self._controller.set_display_name(display_name))
-
-    @Slot(str, str, str, result="QVariant")
-    def addIdentifier(self, kind: str, value: str, label: str) -> dict[str, object]:
-        return self._mutate(lambda: self._controller.add_identifier(kind, value, label or None))
 
     @Slot(str, str, str, result="QVariant")
     def createTarget(self, name: str, domain: str, privacy_email: str) -> dict[str, object]:
@@ -155,6 +152,9 @@ class Bridge(QObject):
             claim = review_service.accept_claim(proposal_token, approved_by_user=True)
         except (TypeError, ValueError, LookupError) as exc:
             return self._fail("INVALID_INPUT", str(exc))
+        except (OSError, sqlite3.Error):
+            _LOG.exception("Model claim persistence failed")
+            return self._fail("OPERATION_FAILED", "Operation failed. Check the logs for details.")
         self.stateChanged.emit(self._controller.get_bootstrap_state())
         return {"ok": True, "result": self._claim_dto(claim)}
 
@@ -173,14 +173,17 @@ class Bridge(QObject):
     def addUserEvidence(
         self,
         investigation_id: int,
-        artifact_id: int,
+        _artifact_id: int,
         value: str,
         source_locator: str,
     ) -> dict[str, object]:
+        # The current form has no explicit artifact selector. Never infer provenance
+        # from presentation order; manual evidence remains unattached until the user
+        # deliberately chooses a source through a future semantic API.
         return self._mutate(
             lambda: self._controller.add_user_evidence(
                 investigation_id,
-                artifact_id or None,
+                None,
                 value or None,
                 source_locator or None,
             )
@@ -278,12 +281,18 @@ class Bridge(QObject):
             return operation()
         except (ValueError, LookupError) as exc:
             return self._fail("INVALID_INPUT", str(exc))
+        except (OSError, sqlite3.Error):
+            _LOG.exception("Bridge read operation failed")
+            return self._fail("OPERATION_FAILED", "Operation failed. Check the logs for details.")
 
     def _mutate(self, operation) -> dict[str, object]:
         try:
             result = operation()
         except (ValueError, LookupError) as exc:
             return self._fail("INVALID_INPUT", str(exc))
+        except (OSError, sqlite3.Error):
+            _LOG.exception("Bridge mutation failed")
+            return self._fail("OPERATION_FAILED", "Operation failed. Check the logs for details.")
         self.stateChanged.emit(self._controller.get_bootstrap_state())
         return {"ok": True, "result": result}
 

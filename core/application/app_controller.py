@@ -5,6 +5,7 @@ from datetime import date
 from core.application.case_service import CaseService
 from core.application.identity_service import IdentityService
 from core.application.investigation_service import InvestigationService
+from core.application.research_service import CancellationCheck
 from core.application.target_service import TargetService
 from core.domain.case import Case, CaseEvent, CaseStatus
 from core.domain.identity import IdentifierKind
@@ -145,11 +146,13 @@ class AppController:
         artifact_id: int,
         *,
         approved_by_user: bool,
+        cancel_requested: CancellationCheck | None = None,
     ) -> dict[str, object]:
         created = self._investigation_service.research_artifact_urls(
             investigation_id,
             artifact_id,
             approved_by_user=approved_by_user,
+            cancel_requested=cancel_requested,
         )
         return {
             "createdCount": len(created),

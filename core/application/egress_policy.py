@@ -44,4 +44,4 @@ class EgressPolicy:
 
     def require_allowed(self, intent: OutboundIntent) -> None:
         if self.evaluate(intent) is not EgressDecision.ALLOW:
-            raise PermissionError("Outbound research requires explicit user approval")
+            raise PermissionError("Outbound operation requires explicit user approval")

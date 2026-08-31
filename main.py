@@ -50,6 +50,25 @@ def configure_logging() -> None:
     )
 
 
+def _validated_inference_endpoint(settings: AppSettings) -> InferenceEndpoint:
+    try:
+        endpoint = InferenceEndpoint(
+            settings.inference_endpoint,
+            InferenceLocation(settings.inference_location),
+        )
+        endpoint.validate()
+        return endpoint
+    except ValueError:
+        defaults = AppSettings()
+        _LOG.warning("Invalid inference settings; using local defaults", exc_info=True)
+        settings.inference_endpoint = defaults.inference_endpoint
+        settings.inference_location = defaults.inference_location
+        return InferenceEndpoint(
+            defaults.inference_endpoint,
+            InferenceLocation(defaults.inference_location),
+        )
+
+
 def build_controller() -> tuple[
     AppController,
     ModelAnalysisService,
@@ -85,12 +104,7 @@ def build_controller() -> tuple[
         research_service,
         egress_policy,
     )
-    inference_service = InferenceService(
-        InferenceEndpoint(
-            settings.inference_endpoint,
-            InferenceLocation(settings.inference_location),
-        )
-    )
+    inference_service = InferenceService(_validated_inference_endpoint(settings))
     model_analysis_service = ModelAnalysisService(
         investigation_service,
         inference_service,

@@ -19,6 +19,13 @@ class ResearchError(RuntimeError):
     pass
 
 
+class ResearchCancelled(ResearchError):
+    pass
+
+
+CancellationCheck = Callable[[], bool]
+
+
 @dataclass(frozen=True, slots=True)
 class RedirectHop:
     source_url: str
@@ -72,7 +79,13 @@ class ResearchService:
         self._network_policy = network_policy
         self._transport = transport or self._request_pinned
 
-    def fetch_public_document(self, url: str) -> ResearchDocument:
+    def fetch_public_document(
+        self,
+        url: str,
+        *,
+        cancel_requested: CancellationCheck | None = None,
+    ) -> ResearchDocument:
+        self._raise_if_cancelled(cancel_requested)
         current = url.strip()
         if not current:
             raise ResearchError("Research URL is required")
@@ -80,12 +93,14 @@ class ResearchService:
         requested = current
 
         for _ in range(self.MAX_REDIRECTS + 1):
+            self._raise_if_cancelled(cancel_requested)
             try:
                 validated = self._network_policy.validate_public_url(current)
             except NetworkPolicyError as exc:
                 raise ResearchError(str(exc)) from exc
 
             response = self._transport(validated, self.TIMEOUT_SECONDS, self.MAX_DOCUMENT_BYTES)
+            self._raise_if_cancelled(cancel_requested)
             if len(response.body) > self.MAX_DOCUMENT_BYTES:
                 raise ResearchError("Research response exceeds size limit")
             if response.status in self.REDIRECT_STATUSES:
@@ -121,23 +136,39 @@ class ResearchService:
         except NetworkPolicyError as exc:
             raise ResearchError(str(exc)) from exc
 
-    def lookup_domain_rdap(self, domain: str) -> ResearchDocument:
+    def lookup_domain_rdap(
+        self,
+        domain: str,
+        *,
+        cancel_requested: CancellationCheck | None = None,
+    ) -> ResearchDocument:
+        self._raise_if_cancelled(cancel_requested)
         normalized = domain.strip().rstrip(".").lower()
         if not normalized or "." not in normalized:
             raise ResearchError("RDAP lookup requires a fully qualified domain")
         tld = normalized.rsplit(".", 1)[1]
 
-        bootstrap = self.fetch_public_document(self.IANA_RDAP_BOOTSTRAP)
+        bootstrap = self.fetch_public_document(
+            self.IANA_RDAP_BOOTSTRAP,
+            cancel_requested=cancel_requested,
+        )
         try:
             payload = json.loads(bootstrap.body.decode("utf-8"))
             services = payload["services"]
         except (UnicodeDecodeError, json.JSONDecodeError, KeyError, TypeError) as exc:
             raise ResearchError("IANA RDAP bootstrap response is malformed") from exc
 
+        self._raise_if_cancelled(cancel_requested)
         base_url = self._rdap_base_for_tld(services, tld)
         return self.fetch_public_document(
-            urljoin(base_url.rstrip("/") + "/", f"domain/{quote(normalized)}")
+            urljoin(base_url.rstrip("/") + "/", f"domain/{quote(normalized)}"),
+            cancel_requested=cancel_requested,
         )
+
+    @staticmethod
+    def _raise_if_cancelled(cancel_requested: CancellationCheck | None) -> None:
+        if cancel_requested is not None and cancel_requested():
+            raise ResearchCancelled("Research operation was cancelled")
 
     @staticmethod
     def _rdap_base_for_tld(services: object, tld: str) -> str:

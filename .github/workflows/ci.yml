@@ -15,10 +15,10 @@ jobs:
       QTWEBENGINE_DISABLE_SANDBOX: "1"
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -41,3 +41,6 @@ jobs:
 
       - name: Pytest
         run: .venv/bin/python -m pytest
+
+      - name: Dependency audit
+        run: .venv/bin/pip-audit -r requirements.txt -r requirements-dev.txt
