@@ -258,11 +258,8 @@ class AppController:
     def _case_dto(self, case: Case) -> dict[str, object]:
         policy = self._case_service.policy_for(case)
         schedule = self._case_service.deadline_for(case)
-        effective_due_on = None
-        if schedule is not None:
-            effective_due_on = (
-                schedule.extended_due_on if case.extension_notified_on else schedule.initial_due_on
-            )
+        extension_assessment = self._case_service.extension_notice_assessment(case)
+        effective_due_on = self._case_service.effective_deadline_for(case)
         snapshot = case.deadline_snapshot
         return {
             "id": case.id,
@@ -273,6 +270,9 @@ class AppController:
             "status": case.status.value,
             "receivedOn": case.received_on,
             "extensionNotifiedOn": case.extension_notified_on,
+            "extensionNoticeAssessment": (
+                extension_assessment.value if extension_assessment else None
+            ),
             "initialDueOn": schedule.initial_due_on.isoformat() if schedule else None,
             "extendedDueOn": schedule.extended_due_on.isoformat() if schedule else None,
             "effectiveDueOn": effective_due_on.isoformat() if effective_due_on else None,
@@ -281,7 +281,6 @@ class AppController:
             ),
             "deadlineJurisdiction": snapshot.jurisdiction_code if snapshot else None,
             "holidayCalendarSource": snapshot.holiday_source if snapshot else None,
-            "holidayCalendarComplete": snapshot.holiday_calendar_complete if snapshot else False,
             "createdAt": case.created_at,
             "updatedAt": case.updated_at,
         }
