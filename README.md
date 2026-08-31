@@ -19,7 +19,8 @@ M16 establishes the deadline foundation required before any future real request 
 - the calendar source/revision, jurisdiction, holiday dates and resulting one-month/three-month deadlines are persisted atomically at submission;
 - the repository creates Draft Cases with the entire deadline snapshot unset and establishes all snapshot fields atomically on submission; SQLite rejects partial snapshot updates and prevents an established snapshot from being modified later;
 - extension notices cannot precede the recorded request receipt date;
-- a definitively late extension notice is rejected only when the stored holiday calendar is complete; incomplete calendars preserve the notice and keep manual legal-calendar review explicit instead of producing a false definitive rejection;
+- a definitively late extension notice is rejected only when the stored holiday calendar is complete;
+- when an incomplete calendar makes timeliness uncertain, the notice is preserved for review but does not activate the three-month deadline: the initial calculated deadline remains active until the uncertainty is resolved;
 - extension handling and displayed deadlines use the stored snapshot rather than recalculating historical Cases against a newer holiday provider;
 - pre-M16 submitted Cases remain readable without invented historical metadata and are clearly treated as requiring holiday/jurisdiction review.
 
@@ -40,7 +41,7 @@ Supported GDPR Case workflows are Article 15 access/provenance, Article 17 erasu
 - Sensitive personal/investigative data and audit destinations are encrypted before persistence
 - `CaseService` owns Case lifecycle and deadline semantics
 - `HolidayCalendarProvider` owns explicit jurisdiction-to-calendar resolution with source/version metadata
-- `DeadlineEngine` owns calendar-month arithmetic and working-day roll-forward
+- `DeadlineEngine` owns calendar-month arithmetic, working-day roll-forward and extension-timeliness assessment
 - `CaseRepository` atomically persists Case lifecycle changes and immutable deadline snapshots
 - `InvestigationService` owns Investigation/Evidence/Claim mutations and semantic research orchestration
 - `InvestigationRepository` provides atomic persistence operations for aggregate changes
