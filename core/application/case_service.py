@@ -92,10 +92,18 @@ class CaseService:
             raise ValueError("Only a submitted case awaiting response can record an extension")
         if case.extension_notified_on is not None:
             raise ValueError("An extension has already been recorded")
+
+        received_on = date.fromisoformat(case.received_on)
+        if notified_on < received_on:
+            raise ValueError("Extension notice cannot precede the recorded request receipt date")
+
         schedule = self.deadline_for(case)
         if schedule is None:
             raise RuntimeError("Submitted case has no deadline inputs")
-        if not self._deadline_engine.extension_notice_is_timely(notified_on, schedule):
+        if (
+            not schedule.public_holiday_review_required
+            and not self._deadline_engine.extension_notice_is_timely(notified_on, schedule)
+        ):
             raise ValueError("Extension notice was not recorded within the initial one-month deadline")
         return self._repository.record_extension(case_id, notified_on)
 
