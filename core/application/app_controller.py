@@ -21,7 +21,10 @@ from core.domain.investigation import (
     EvidenceProvenance,
     Investigation,
 )
-from core.domain.outbound_request import ApprovedOutboundRequest
+from core.domain.outbound_request import (
+    ApprovedOutboundRequest,
+    ApprovedOutboundRequestSummary,
+)
 from core.domain.rights import (
     CaseRight,
     ErasureGround,
@@ -54,7 +57,7 @@ class AppController:
         targets = self._target_service.list_targets()
         cases = self._case_service.list_cases()
         investigations = self._investigation_service.list_investigations()
-        approvals = self._request_approval_service.list_all()
+        approvals = self._request_approval_service.list_summaries()
         return {
             "identity": {
                 "displayName": identity.display_name,
@@ -358,7 +361,9 @@ class AppController:
         }
 
     @staticmethod
-    def _approved_request_summary_dto(request: ApprovedOutboundRequest) -> dict[str, object]:
+    def _approved_request_summary_dto(
+        request: ApprovedOutboundRequest | ApprovedOutboundRequestSummary,
+    ) -> dict[str, object]:
         return {
             "id": request.id,
             "caseId": request.case_id,
