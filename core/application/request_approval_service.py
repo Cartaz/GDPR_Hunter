@@ -6,7 +6,9 @@ from core.application.case_service import CaseService
 from core.domain.case import CaseStatus
 from core.domain.outbound_request import ApprovedOutboundRequest, ApprovedOutboundRequestSummary
 from core.domain.rights import ErasureGround
-from core.storage.approved_outbound_request_repository import ApprovedOutboundRequestRepository
+from core.storage.approved_outbound_request_repository import (
+    ApprovedOutboundRequestRepository,
+)
 
 
 def _utc_now() -> str:
