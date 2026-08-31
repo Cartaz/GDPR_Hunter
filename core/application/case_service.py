@@ -9,6 +9,7 @@ from core.application.deadline_engine import (
 )
 from core.application.holiday_calendar import HolidayCalendarProvider
 from core.application.identity_service import IdentityService
+from core.application.request_composer import RequestComposer, RequestPreview
 from core.application.target_service import TargetService
 from core.domain.case import (
     Case,
@@ -17,12 +18,18 @@ from core.domain.case import (
     CaseStatus,
     validate_case_transition,
 )
-from core.domain.rights import CaseRight, RightPolicy, RightsPolicy
+from core.domain.rights import (
+    CaseRight,
+    ErasureGround,
+    ErasureGroundPolicy,
+    RightPolicy,
+    RightsPolicy,
+)
 from core.storage.case_repository import CaseRepository
 
 
 class CaseService:
-    """Own GDPR Case creation, lifecycle transitions, rights policy, and deadline inputs."""
+    """Own GDPR Case lifecycle, rights policy, deadline inputs, and request previews."""
 
     def __init__(
         self,
@@ -39,9 +46,13 @@ class CaseService:
         self._rights_policy = rights_policy
         self._deadline_engine = deadline_engine
         self._holiday_calendar_provider = holiday_calendar_provider or HolidayCalendarProvider()
+        self._request_composer = RequestComposer(rights_policy)
 
     def supported_rights(self) -> tuple[RightPolicy, ...]:
         return self._rights_policy.supported()
+
+    def erasure_grounds(self) -> tuple[ErasureGroundPolicy, ...]:
+        return self._rights_policy.erasure_grounds()
 
     def create_case(self, target_id: int, right: CaseRight) -> Case:
         self._rights_policy.get(right)
@@ -52,6 +63,22 @@ class CaseService:
         if identity.id is None:
             raise RuntimeError("Persisted identity has no id")
         return self._repository.create(identity.id, target.id, right)
+
+    def preview_request(
+        self,
+        case_id: int,
+        *,
+        erasure_ground: ErasureGround | None = None,
+    ) -> RequestPreview:
+        case = self.get_case(case_id)
+        identity = self._identity_service.get_identity()
+        target = self._target_service.get_target(case.target_id)
+        return self._request_composer.compose(
+            case,
+            identity,
+            target,
+            erasure_ground=erasure_ground,
+        )
 
     def submit_case(
         self,

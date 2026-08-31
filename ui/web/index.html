@@ -126,10 +126,23 @@
           <label for="case-right">Right for new cases</label>
           <select id="case-right" aria-describedby="right-summary"></select>
           <p id="right-summary" class="muted policy-summary"></p>
+          <label for="case-erasure-ground">Article 17 ground for erasure previews</label>
+          <select id="case-erasure-ground" aria-describedby="erasure-ground-summary"></select>
+          <p id="erasure-ground-summary" class="muted policy-summary">Used only when previewing an erasure request. It is temporary until a future dispatch is explicitly approved.</p>
           <label for="case-jurisdiction">Controller action jurisdiction</label>
           <input id="case-jurisdiction" maxlength="2" autocomplete="off" placeholder="IT" aria-describedby="jurisdiction-summary">
           <p id="jurisdiction-summary" class="muted policy-summary">Enter the two-letter country code for the place where the controller must act. It is snapshotted when submission is recorded; unsupported or incomplete local calendars remain explicitly reviewable.</p>
           <div id="case-list" class="record-list" aria-live="polite"></div>
+
+          <div id="request-preview" class="stack-form compact-form" hidden aria-labelledby="request-preview-title">
+            <strong id="request-preview-title">Request preview</strong>
+            <p id="request-preview-recipient" class="muted"></p>
+            <label for="request-preview-subject">Subject</label>
+            <input id="request-preview-subject" readonly>
+            <label for="request-preview-body">Body</label>
+            <textarea id="request-preview-body" rows="16" readonly></textarea>
+            <p class="muted">Preview only. GDPR Hunter has not sent or queued this message.</p>
+          </div>
         </article>
       </section>
 

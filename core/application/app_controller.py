@@ -20,7 +20,12 @@ from core.domain.investigation import (
     EvidenceProvenance,
     Investigation,
 )
-from core.domain.rights import CaseRight, RightPolicy
+from core.domain.rights import (
+    CaseRight,
+    ErasureGround,
+    ErasureGroundPolicy,
+    RightPolicy,
+)
 from core.domain.target import Target
 
 
@@ -52,9 +57,12 @@ class AppController:
             },
             "targets": [self._target_dto(target) for target in targets],
             "rights": [self._right_dto(policy) for policy in self._case_service.supported_rights()],
+            "erasureGrounds": [
+                self._erasure_ground_dto(policy) for policy in self._case_service.erasure_grounds()
+            ],
             "cases": [self._case_dto(case) for case in cases],
             "investigations": [self._investigation_dto(item) for item in investigations],
-            "milestone": "M16 — Jurisdiction-aware Deadline Snapshots",
+            "milestone": "M17 — Deterministic Request Composition",
             "features": {
                 "investigatorCore": True,
                 "artifactAnalysis": True,
@@ -68,6 +76,7 @@ class AppController:
                 "rightsPolicy": True,
                 "deadlines": True,
                 "jurisdictionDeadlines": True,
+                "requestComposition": True,
             },
         }
 
@@ -92,6 +101,31 @@ class AppController:
         except ValueError as exc:
             raise ValueError("Unsupported GDPR right") from exc
         return self._case_dto(self._case_service.create_case(target_id, parsed_right))
+
+    def preview_case_request(
+        self,
+        case_id: int,
+        erasure_ground: str | None = None,
+    ) -> dict[str, object]:
+        parsed_ground: ErasureGround | None = None
+        normalized_ground = erasure_ground.strip() if erasure_ground else ""
+        if normalized_ground:
+            try:
+                parsed_ground = ErasureGround(normalized_ground)
+            except ValueError as exc:
+                raise ValueError("Unsupported Article 17 erasure ground") from exc
+        preview = self._case_service.preview_request(
+            case_id,
+            erasure_ground=parsed_ground,
+        )
+        return {
+            "caseId": preview.case_id,
+            "recipientName": preview.recipient_name,
+            "recipientEmail": preview.recipient_email,
+            "subject": preview.subject,
+            "body": preview.body,
+            "legalBasis": preview.legal_basis,
+        }
 
     def submit_case(
         self,
@@ -289,6 +323,15 @@ class AppController:
             "title": policy.title,
             "summary": policy.summary,
             "requiresCaseSpecificGround": policy.requires_case_specific_ground,
+        }
+
+    @staticmethod
+    def _erasure_ground_dto(policy: ErasureGroundPolicy) -> dict[str, object]:
+        return {
+            "id": policy.ground.value,
+            "article": policy.article,
+            "title": policy.title,
+            "summary": policy.summary,
         }
 
     @staticmethod
