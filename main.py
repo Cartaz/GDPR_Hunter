@@ -27,7 +27,9 @@ from core.application.request_approval_service import RequestApprovalService
 from core.application.research_service import ResearchService
 from core.application.target_service import TargetService
 from core.domain.rights import RightsPolicy
-from core.storage.approved_outbound_request_repository import ApprovedOutboundRequestRepository
+from core.storage.approved_outbound_request_repository import (
+    ApprovedOutboundRequestRepository,
+)
 from core.storage.artifact_store import ArtifactStore
 from core.storage.case_repository import CaseRepository
 from core.storage.database import Database
