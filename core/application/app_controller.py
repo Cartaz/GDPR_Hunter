@@ -54,7 +54,7 @@ class AppController:
             "rights": [self._right_dto(policy) for policy in self._case_service.supported_rights()],
             "cases": [self._case_dto(case) for case in cases],
             "investigations": [self._investigation_dto(item) for item in investigations],
-            "milestone": "M15 — Reviewed Research Proposals",
+            "milestone": "M16 — Jurisdiction-aware Deadline Snapshots",
             "features": {
                 "investigatorCore": True,
                 "artifactAnalysis": True,
@@ -67,6 +67,7 @@ class AppController:
                 "targets": True,
                 "rightsPolicy": True,
                 "deadlines": True,
+                "jurisdictionDeadlines": True,
             },
         }
 
@@ -92,8 +93,19 @@ class AppController:
             raise ValueError("Unsupported GDPR right") from exc
         return self._case_dto(self._case_service.create_case(target_id, parsed_right))
 
-    def submit_case(self, case_id: int, received_on: str) -> dict[str, object]:
-        return self._case_dto(self._case_service.submit_case(case_id, self._parse_date(received_on)))
+    def submit_case(
+        self,
+        case_id: int,
+        received_on: str,
+        jurisdiction_code: str,
+    ) -> dict[str, object]:
+        return self._case_dto(
+            self._case_service.submit_case(
+                case_id,
+                self._parse_date(received_on),
+                jurisdiction_code,
+            )
+        )
 
     def record_case_extension(self, case_id: int, notified_on: str) -> dict[str, object]:
         return self._case_dto(
@@ -251,6 +263,7 @@ class AppController:
             effective_due_on = (
                 schedule.extended_due_on if case.extension_notified_on else schedule.initial_due_on
             )
+        snapshot = case.deadline_snapshot
         return {
             "id": case.id,
             "targetId": case.target_id,
@@ -266,6 +279,9 @@ class AppController:
             "publicHolidayReviewRequired": (
                 schedule.public_holiday_review_required if schedule else False
             ),
+            "deadlineJurisdiction": snapshot.jurisdiction_code if snapshot else None,
+            "holidayCalendarSource": snapshot.holiday_source if snapshot else None,
+            "holidayCalendarComplete": snapshot.holiday_calendar_complete if snapshot else False,
             "createdAt": case.created_at,
             "updatedAt": case.updated_at,
         }
