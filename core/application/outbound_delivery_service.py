@@ -103,5 +103,5 @@ class OutboundDeliveryService:
             accepted=accepted,
         )
 
-    def list_events(self) -> list[DeliveryEvent]:
-        return self._event_repository.list_events()
+    def list_latest_events(self) -> list[DeliveryEvent]:
+        return self._event_repository.list_latest_events()
