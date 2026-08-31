@@ -5,6 +5,12 @@ const targetCountNode = document.getElementById("target-count");
 const caseCountNode = document.getElementById("case-count");
 const displayNameNode = document.getElementById("display-name");
 const nameForm = document.getElementById("name-form");
+const identifierForm = document.getElementById("identifier-form");
+const identifierKindNode = document.getElementById("identifier-kind");
+const identifierValueNode = document.getElementById("identifier-value");
+const identifierLabelNode = document.getElementById("identifier-label");
+const identifierListNode = document.getElementById("identifier-list");
+const requestIdentifierOptionsNode = document.getElementById("request-identifier-options");
 const targetForm = document.getElementById("target-form");
 const targetNameNode = document.getElementById("target-name");
 const targetDomainNode = document.getElementById("target-domain");
@@ -21,6 +27,7 @@ const requestPreviewTitleNode = document.getElementById("request-preview-title")
 const requestPreviewRecipientNode = document.getElementById("request-preview-recipient");
 const requestPreviewSubjectNode = document.getElementById("request-preview-subject");
 const requestPreviewBodyNode = document.getElementById("request-preview-body");
+const approveRequestButton = document.getElementById("approve-request-button");
 const timelineTitleNode = document.getElementById("timeline-title");
 const timelineListNode = document.getElementById("timeline-list");
 const investigationForm = document.getElementById("investigation-form");
@@ -43,6 +50,7 @@ const modelProposalListNode = document.getElementById("model-proposal-list");
 
 let backend = null;
 let currentState = null;
+let currentRequestPreviewContext = null;
 let selectedInvestigationId = null;
 let selectedInvestigationDetail = null;
 let researchBusy = false;
@@ -80,22 +88,86 @@ function targetName(targetId) {
   return target?.name ?? `Target #${targetId}`;
 }
 
+function selectedIdentifierIds() {
+  const selected = [];
+  for (const checkbox of requestIdentifierOptionsNode.querySelectorAll("input[type='checkbox']")) {
+    if (checkbox.checked) selected.push(Number(checkbox.dataset.identifierId));
+  }
+  return selected.sort((left, right) => left - right);
+}
+
 function clearRequestPreview() {
+  currentRequestPreviewContext = null;
   requestPreviewNode.hidden = true;
   requestPreviewTitleNode.textContent = "Request preview";
   requestPreviewRecipientNode.textContent = "";
   requestPreviewSubjectNode.value = "";
   requestPreviewBodyNode.value = "";
+  approveRequestButton.disabled = true;
 }
 
 function renderRequestPreview(preview) {
+  currentRequestPreviewContext = {
+    caseId: preview.caseId,
+    erasureGround: preview.erasureGround ?? "",
+    identifierIds: [...(preview.identifierIds ?? [])],
+  };
   requestPreviewTitleNode.textContent = `Request preview · ${preview.legalBasis}`;
   requestPreviewRecipientNode.textContent = preview.recipientEmail
     ? `To: ${preview.recipientName} <${preview.recipientEmail}>`
     : `To: ${preview.recipientName} · no privacy email registered`;
   requestPreviewSubjectNode.value = preview.subject;
   requestPreviewBodyNode.value = preview.body;
+  approveRequestButton.disabled = !preview.recipientEmail;
   requestPreviewNode.hidden = false;
+}
+
+function renderIdentityIdentifiers(identifiers) {
+  clearNode(identifierListNode);
+  if (!identifiers.length) {
+    const empty = document.createElement("p");
+    empty.className = "muted empty-state";
+    empty.textContent = "No identifiers stored yet.";
+    identifierListNode.appendChild(empty);
+    return;
+  }
+  for (const identifier of identifiers) {
+    const row = document.createElement("div");
+    row.className = "timeline-event";
+    const title = document.createElement("strong");
+    title.textContent = identifier.label
+      ? `${identifier.kind} · ${identifier.label}`
+      : identifier.kind;
+    const value = document.createElement("small");
+    value.textContent = identifier.value;
+    row.append(title, value);
+    identifierListNode.appendChild(row);
+  }
+}
+
+function renderRequestIdentifierOptions(identifiers) {
+  clearNode(requestIdentifierOptionsNode);
+  if (!identifiers.length) {
+    const empty = document.createElement("p");
+    empty.className = "muted empty-state";
+    empty.textContent = "No identifiers available. Add them in the Identity Vault if needed.";
+    requestIdentifierOptionsNode.appendChild(empty);
+    return;
+  }
+  for (const identifier of identifiers.filter((item) => item.active)) {
+    const label = document.createElement("label");
+    label.className = "identifier-check";
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.dataset.identifierId = String(identifier.id);
+    checkbox.addEventListener("change", clearRequestPreview);
+    const text = document.createElement("span");
+    text.textContent = identifier.label
+      ? `${identifier.kind} · ${identifier.label}: ${identifier.value}`
+      : `${identifier.kind}: ${identifier.value}`;
+    label.append(checkbox, text);
+    requestIdentifierOptionsNode.appendChild(label);
+  }
 }
 
 function renderInvestigations(investigations) {
@@ -361,8 +433,8 @@ function renderErasureGrounds(grounds) {
 function renderErasureGroundSummary() {
   const ground = currentState?.erasureGrounds?.find((item) => item.id === caseErasureGroundNode.value);
   erasureGroundSummaryNode.textContent = ground
-    ? `${ground.summary} Preview-only until a future dispatch is explicitly approved.`
-    : "Used only when previewing an erasure request. It is temporary until a future dispatch is explicitly approved.";
+    ? `${ground.summary} It becomes part of an immutable payload only after explicit approval.`
+    : "Used only for Article 17 requests. The selected ground becomes part of an approved payload only after explicit approval.";
 }
 
 function renderTargets(targets) {
@@ -407,7 +479,8 @@ function previewCaseRequest(caseItem) {
     caseErasureGroundNode.focus();
     return;
   }
-  backend.previewCaseRequest(caseItem.id, erasureGround, (response) => {
+  const identifierIds = selectedIdentifierIds();
+  backend.previewCaseRequest(caseItem.id, erasureGround, identifierIds, (response) => {
     if (response?.error) {
       setStatus(response.error.message, true);
       clearRequestPreview();
@@ -416,6 +489,28 @@ function previewCaseRequest(caseItem) {
     renderRequestPreview(response);
     setStatus("Deterministic request preview generated locally. Nothing has been sent.");
   });
+}
+
+function approveCurrentRequest() {
+  if (!backend || !currentRequestPreviewContext) return;
+  const approved = window.confirm(
+    "Persist an encrypted, immutable copy of exactly this recipient, subject and body as the user-approved outbound payload? This does not send, queue or hand off the message.",
+  );
+  if (!approved) return;
+  const context = currentRequestPreviewContext;
+  backend.approveCaseRequest(
+    context.caseId,
+    context.erasureGround,
+    context.identifierIds,
+    approved,
+    (response) => {
+      if (response?.ok) {
+        setStatus(`Approved payload #${response.result.id} persisted locally. Nothing has been sent.`);
+      } else if (response?.error?.message) {
+        setStatus(response.error.message, true);
+      }
+    },
+  );
 }
 
 function renderCases(cases) {
@@ -436,6 +531,13 @@ function renderCases(cases) {
     const detail = document.createElement("small");
     detail.textContent = `Case #${caseItem.id} · ${caseItem.article ?? "Legacy"} · ${caseItem.rightTitle} · ${caseItem.status}`;
     info.append(title, detail);
+    const approvals = (currentState?.approvedRequests ?? []).filter((item) => item.caseId === caseItem.id);
+    if (approvals.length) {
+      const approval = approvals[0];
+      const approvedDetail = document.createElement("small");
+      approvedDetail.textContent = `Latest approved payload #${approval.id} · ${approval.approvedAt} · not sent`;
+      info.appendChild(approvedDetail);
+    }
     if (caseItem.effectiveDueOn) {
       const due = document.createElement("small");
       due.textContent = `Tracked deadline: ${caseItem.effectiveDueOn}${caseItem.extensionNotifiedOn ? " · extension recorded" : ""}`;
@@ -481,12 +583,14 @@ function renderCases(cases) {
 
 function renderState(state) {
   currentState = state;
-  milestoneNode.textContent = state.milestone ?? "M7";
+  milestoneNode.textContent = state.milestone ?? "M18";
   investigationCountNode.textContent = String(state.investigations?.length ?? 0);
   targetCountNode.textContent = String(state.targets?.length ?? 0);
   caseCountNode.textContent = String(state.cases?.length ?? 0);
   displayNameNode.value = state.identity?.displayName ?? "";
   clearRequestPreview();
+  renderIdentityIdentifiers(state.identity?.identifiers ?? []);
+  renderRequestIdentifierOptions(state.identity?.identifiers ?? []);
   renderInvestigations(state.investigations ?? []);
   renderRights(state.rights ?? []);
   renderErasureGrounds(state.erasureGrounds ?? []);
@@ -638,12 +742,27 @@ caseErasureGroundNode.addEventListener("change", () => {
 caseJurisdictionNode.addEventListener("input", () => {
   caseJurisdictionNode.value = caseJurisdictionNode.value.toUpperCase();
 });
+approveRequestButton.addEventListener("click", approveCurrentRequest);
 modelAnalysisButton.addEventListener("click", requestModelAnalysis);
 
 nameForm.addEventListener("submit", (event) => {
   event.preventDefault();
   if (!backend) return;
   backend.setDisplayName(displayNameNode.value, (response) => handleMutation(response, "Profile saved locally."));
+});
+
+identifierForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  if (!backend) return;
+  backend.addIdentifier(
+    identifierKindNode.value,
+    identifierValueNode.value,
+    identifierLabelNode.value,
+    (response) => {
+      handleMutation(response, "Identifier encrypted and stored locally.");
+      if (response?.ok) identifierForm.reset();
+    },
+  );
 });
 
 targetForm.addEventListener("submit", (event) => {
