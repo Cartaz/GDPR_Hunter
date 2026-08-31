@@ -72,6 +72,12 @@ class Bridge(QObject):
     def createCase(self, target_id: int, right: str) -> dict[str, object]:
         return self._mutate(lambda: self._controller.create_case(target_id, right))
 
+    @Slot(int, str, result="QVariant")
+    def previewCaseRequest(self, case_id: int, erasure_ground: str) -> dict[str, object]:
+        return self._read(
+            lambda: self._controller.preview_case_request(case_id, erasure_ground or None)
+        )
+
     @Slot(int, str, str, result="QVariant")
     def submitCase(
         self,
