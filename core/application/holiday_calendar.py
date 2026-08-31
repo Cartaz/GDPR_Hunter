@@ -16,10 +16,6 @@ class HolidayCalendarSnapshot:
     source: str
     complete: bool
 
-    @property
-    def review_required(self) -> bool:
-        return not self.complete
-
 
 class JurisdictionHolidayCalendar(Protocol):
     jurisdiction_code: str
