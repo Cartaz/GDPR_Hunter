@@ -5,10 +5,11 @@ from datetime import date
 from core.application.case_service import CaseService
 from core.application.identity_service import IdentityService
 from core.application.investigation_service import InvestigationService
+from core.application.request_approval_service import RequestApprovalService
 from core.application.research_service import CancellationCheck
 from core.application.target_service import TargetService
 from core.domain.case import Case, CaseEvent, CaseStatus
-from core.domain.identity import IdentifierKind
+from core.domain.identity import Identifier, IdentifierKind
 from core.domain.investigation import (
     Artifact,
     ArtifactKind,
@@ -20,6 +21,7 @@ from core.domain.investigation import (
     EvidenceProvenance,
     Investigation,
 )
+from core.domain.outbound_request import ApprovedOutboundRequest
 from core.domain.rights import (
     CaseRight,
     ErasureGround,
@@ -38,11 +40,13 @@ class AppController:
         target_service: TargetService,
         case_service: CaseService,
         investigation_service: InvestigationService,
+        request_approval_service: RequestApprovalService,
     ) -> None:
         self._identity_service = identity_service
         self._target_service = target_service
         self._case_service = case_service
         self._investigation_service = investigation_service
+        self._request_approval_service = request_approval_service
 
     def get_bootstrap_state(self) -> dict[str, object]:
         identity = self._identity_service.get_identity()
@@ -50,10 +54,12 @@ class AppController:
         targets = self._target_service.list_targets()
         cases = self._case_service.list_cases()
         investigations = self._investigation_service.list_investigations()
+        approvals = self._request_approval_service.list_all()
         return {
             "identity": {
                 "displayName": identity.display_name,
                 "identifierCount": len(identifiers),
+                "identifiers": [self._identifier_dto(item) for item in identifiers],
             },
             "targets": [self._target_dto(target) for target in targets],
             "rights": [self._right_dto(policy) for policy in self._case_service.supported_rights()],
@@ -61,8 +67,9 @@ class AppController:
                 self._erasure_ground_dto(policy) for policy in self._case_service.erasure_grounds()
             ],
             "cases": [self._case_dto(case) for case in cases],
+            "approvedRequests": [self._approved_request_summary_dto(item) for item in approvals],
             "investigations": [self._investigation_dto(item) for item in investigations],
-            "milestone": "M17 — Deterministic Request Composition",
+            "milestone": "M18 — Approved Outbound Payloads",
             "features": {
                 "investigatorCore": True,
                 "artifactAnalysis": True,
@@ -77,6 +84,7 @@ class AppController:
                 "deadlines": True,
                 "jurisdictionDeadlines": True,
                 "requestComposition": True,
+                "requestApproval": True,
             },
         }
 
@@ -90,7 +98,7 @@ class AppController:
         except ValueError as exc:
             raise ValueError("Unsupported identifier kind") from exc
         identifier = self._identity_service.add_identifier(parsed_kind, value, label)
-        return {"id": identifier.id, "kind": identifier.kind.value, "label": identifier.label}
+        return self._identifier_dto(identifier)
 
     def create_target(self, name: str, domain: str | None, privacy_email: str | None) -> dict[str, object]:
         return self._target_dto(self._target_service.create_target(name, domain, privacy_email))
@@ -106,17 +114,13 @@ class AppController:
         self,
         case_id: int,
         erasure_ground: str | None = None,
+        identifier_ids: tuple[int, ...] = (),
     ) -> dict[str, object]:
-        parsed_ground: ErasureGround | None = None
-        normalized_ground = erasure_ground.strip() if erasure_ground else ""
-        if normalized_ground:
-            try:
-                parsed_ground = ErasureGround(normalized_ground)
-            except ValueError as exc:
-                raise ValueError("Unsupported Article 17 erasure ground") from exc
+        parsed_ground = self._parse_erasure_ground(erasure_ground)
         preview = self._case_service.preview_request(
             case_id,
             erasure_ground=parsed_ground,
+            identifier_ids=identifier_ids,
         )
         return {
             "caseId": preview.case_id,
@@ -125,7 +129,25 @@ class AppController:
             "subject": preview.subject,
             "body": preview.body,
             "legalBasis": preview.legal_basis,
+            "identifierIds": list(sorted(identifier_ids)),
+            "erasureGround": parsed_ground.value if parsed_ground else None,
         }
+
+    def approve_case_request(
+        self,
+        case_id: int,
+        erasure_ground: str | None,
+        identifier_ids: tuple[int, ...],
+        *,
+        approved_by_user: bool,
+    ) -> dict[str, object]:
+        request = self._request_approval_service.approve(
+            case_id,
+            erasure_ground=self._parse_erasure_ground(erasure_ground),
+            identifier_ids=identifier_ids,
+            approved_by_user=approved_by_user,
+        )
+        return self._approved_request_dto(request)
 
     def submit_case(
         self,
@@ -281,6 +303,26 @@ class AppController:
             raise ValueError("Date must use YYYY-MM-DD format") from exc
 
     @staticmethod
+    def _parse_erasure_ground(value: str | None) -> ErasureGround | None:
+        normalized = value.strip() if value else ""
+        if not normalized:
+            return None
+        try:
+            return ErasureGround(normalized)
+        except ValueError as exc:
+            raise ValueError("Unsupported Article 17 erasure ground") from exc
+
+    @staticmethod
+    def _identifier_dto(identifier: Identifier) -> dict[str, object]:
+        return {
+            "id": identifier.id,
+            "kind": identifier.kind.value,
+            "value": identifier.value,
+            "label": identifier.label,
+            "active": identifier.active,
+        }
+
+    @staticmethod
     def _target_dto(target: Target) -> dict[str, object]:
         return {
             "id": target.id,
@@ -314,6 +356,25 @@ class AppController:
             "createdAt": case.created_at,
             "updatedAt": case.updated_at,
         }
+
+    @staticmethod
+    def _approved_request_summary_dto(request: ApprovedOutboundRequest) -> dict[str, object]:
+        return {
+            "id": request.id,
+            "caseId": request.case_id,
+            "recipientName": request.recipient_name,
+            "recipientEmail": request.recipient_email,
+            "legalBasis": request.legal_basis,
+            "identifierIds": list(request.identifier_ids),
+            "erasureGround": request.erasure_ground.value if request.erasure_ground else None,
+            "approvedAt": request.approved_at,
+        }
+
+    @staticmethod
+    def _approved_request_dto(request: ApprovedOutboundRequest) -> dict[str, object]:
+        result = AppController._approved_request_summary_dto(request)
+        result.update({"subject": request.subject, "body": request.body})
+        return result
 
     @staticmethod
     def _right_dto(policy: RightPolicy) -> dict[str, object]:
