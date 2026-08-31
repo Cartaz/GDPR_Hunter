@@ -54,7 +54,7 @@ class AppController:
             "rights": [self._right_dto(policy) for policy in self._case_service.supported_rights()],
             "cases": [self._case_dto(case) for case in cases],
             "investigations": [self._investigation_dto(item) for item in investigations],
-            "milestone": "M14 — Python-owned Proposal Review",
+            "milestone": "M15 — Reviewed Research Proposals",
             "features": {
                 "investigatorCore": True,
                 "artifactAnalysis": True,
@@ -62,6 +62,7 @@ class AppController:
                 "research": True,
                 "inference": True,
                 "proposalReview": True,
+                "reviewedResearch": True,
                 "cases": True,
                 "targets": True,
                 "rightsPolicy": True,
@@ -151,6 +152,25 @@ class AppController:
         created = self._investigation_service.research_artifact_urls(
             investigation_id,
             artifact_id,
+            approved_by_user=approved_by_user,
+            cancel_requested=cancel_requested,
+        )
+        return {
+            "createdCount": len(created),
+            "evidence": [self._evidence_dto(item) for item in created],
+        }
+
+    def research_model_evidence(
+        self,
+        investigation_id: int,
+        evidence_id: int,
+        *,
+        approved_by_user: bool,
+        cancel_requested: CancellationCheck | None = None,
+    ) -> dict[str, object]:
+        created = self._investigation_service.research_model_evidence(
+            investigation_id,
+            evidence_id,
             approved_by_user=approved_by_user,
             cancel_requested=cancel_requested,
         )
