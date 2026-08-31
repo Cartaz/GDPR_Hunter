@@ -132,7 +132,7 @@ class AppController:
             "subject": preview.subject,
             "body": preview.body,
             "legalBasis": preview.legal_basis,
-            "identifierIds": list(sorted(identifier_ids)),
+            "identifierIds": sorted(identifier_ids),
             "erasureGround": parsed_ground.value if parsed_ground else None,
         }
 
