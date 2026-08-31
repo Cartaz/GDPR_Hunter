@@ -173,14 +173,17 @@ class Bridge(QObject):
     def addUserEvidence(
         self,
         investigation_id: int,
-        artifact_id: int,
+        _artifact_id: int,
         value: str,
         source_locator: str,
     ) -> dict[str, object]:
+        # The current form has no explicit artifact selector. Never infer provenance
+        # from presentation order; manual evidence remains unattached until the user
+        # deliberately chooses a source through a future semantic API.
         return self._mutate(
             lambda: self._controller.add_user_evidence(
                 investigation_id,
-                artifact_id or None,
+                None,
                 value or None,
                 source_locator or None,
             )
