@@ -12,7 +12,9 @@ from core.application.target_service import TargetService
 from core.domain.case import CaseStatus
 from core.domain.identity import IdentifierKind
 from core.domain.rights import CaseRight, ErasureGround, RightsPolicy
-from core.storage.approved_outbound_request_repository import ApprovedOutboundRequestRepository
+from core.storage.approved_outbound_request_repository import (
+    ApprovedOutboundRequestRepository,
+)
 from core.storage.case_repository import CaseRepository
 from core.storage.database import Database
 from core.storage.identity_repository import IdentityRepository
