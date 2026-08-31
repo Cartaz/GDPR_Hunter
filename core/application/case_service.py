@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from datetime import date
 
-from core.application.deadline_engine import DeadlineEngine, DeadlineSchedule
+from core.application.deadline_engine import (
+    DeadlineEngine,
+    DeadlineSchedule,
+    ExtensionNoticeAssessment,
+)
 from core.application.holiday_calendar import HolidayCalendarProvider
 from core.application.identity_service import IdentityService
 from core.application.target_service import TargetService
@@ -100,10 +104,8 @@ class CaseService:
         schedule = self.deadline_for(case)
         if schedule is None:
             raise RuntimeError("Submitted case has no deadline inputs")
-        if (
-            not schedule.public_holiday_review_required
-            and not self._deadline_engine.extension_notice_is_timely(notified_on, schedule)
-        ):
+        assessment = self._deadline_engine.assess_extension_notice(notified_on, schedule)
+        if assessment is ExtensionNoticeAssessment.LATE:
             raise ValueError("Extension notice was not recorded within the initial one-month deadline")
         return self._repository.record_extension(case_id, notified_on)
 
@@ -146,3 +148,28 @@ class CaseService:
         # Pre-M16 rows had no immutable jurisdiction/calendar snapshot. Preserve
         # their previous weekend-only display while keeping holiday review explicit.
         return self._deadline_engine.calculate(date.fromisoformat(case.received_on))
+
+    def extension_notice_assessment(
+        self,
+        case: Case,
+    ) -> ExtensionNoticeAssessment | None:
+        if case.extension_notified_on is None:
+            return None
+        schedule = self.deadline_for(case)
+        if schedule is None:
+            raise RuntimeError("Case with an extension notice has no deadline inputs")
+        return self._deadline_engine.assess_extension_notice(
+            date.fromisoformat(case.extension_notified_on),
+            schedule,
+        )
+
+    def effective_deadline_for(self, case: Case) -> date | None:
+        schedule = self.deadline_for(case)
+        if schedule is None:
+            return None
+        assessment = self.extension_notice_assessment(case)
+        if assessment is None:
+            return schedule.initial_due_on
+        if assessment is ExtensionNoticeAssessment.TIMELY:
+            return schedule.extended_due_on
+        return None
