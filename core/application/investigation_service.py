@@ -3,7 +3,7 @@ from __future__ import annotations
 from core.application.artifact_analyzer import ArtifactAnalyzer
 from core.application.egress_policy import EgressPolicy, OutboundIntent
 from core.application.identity_service import IdentityService
-from core.application.research_service import ResearchService
+from core.application.research_service import CancellationCheck, ResearchCancelled, ResearchService
 from core.domain.investigation import (
     Artifact,
     ArtifactKind,
@@ -131,10 +131,12 @@ class InvestigationService:
         artifact_id: int,
         *,
         approved_by_user: bool,
+        cancel_requested: CancellationCheck | None = None,
     ) -> list[Evidence]:
         self._require_investigation(investigation_id)
         if self._research_service is None or self._egress_policy is None:
             raise RuntimeError("Research capability is not configured")
+        self._raise_if_cancelled(cancel_requested)
 
         source_evidence = [
             item
@@ -153,6 +155,7 @@ class InvestigationService:
         }
         created: list[Evidence] = []
         for source in source_evidence:
+            self._raise_if_cancelled(cancel_requested)
             source_url = source.value
             if source_url is None:
                 continue
@@ -168,7 +171,13 @@ class InvestigationService:
                     approved_by_user=approved_by_user,
                 )
             )
-            document = self._research_service.fetch_public_document(source_url)
+            document = self._research_service.fetch_public_document(
+                source_url,
+                cancel_requested=cancel_requested,
+            )
+            # Persistence of one fetched document is a coherent unit. Honour a
+            # cancellation before starting that unit, not halfway through it.
+            self._raise_if_cancelled(cancel_requested)
             reference = self.import_artifact(
                 investigation_id,
                 ArtifactKind.TEXT,
@@ -297,6 +306,11 @@ class InvestigationService:
         if investigation is None:
             raise LookupError("Investigation does not exist")
         return investigation
+
+    @staticmethod
+    def _raise_if_cancelled(cancel_requested: CancellationCheck | None) -> None:
+        if cancel_requested is not None and cancel_requested():
+            raise ResearchCancelled("Research operation was cancelled")
 
     @staticmethod
     def _require_id(value: int | None) -> int:
