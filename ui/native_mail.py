@@ -5,7 +5,7 @@ from urllib.parse import quote
 from PySide6.QtCore import QUrl
 from PySide6.QtGui import QDesktopServices
 
-_MAILBOX_SAFE = "@!$&'()*+,;=:-._~"
+_MAILBOX_SAFE = "@+!$'*-._~"
 
 
 def _normalize_body_line_endings(body: str) -> str:
