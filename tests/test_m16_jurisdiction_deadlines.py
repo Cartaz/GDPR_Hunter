@@ -6,7 +6,7 @@ from datetime import date
 import pytest
 
 from core.application.case_service import CaseService
-from core.application.deadline_engine import DeadlineEngine
+from core.application.deadline_engine import DeadlineEngine, ExtensionNoticeAssessment
 from core.application.holiday_calendar import (
     HolidayCalendarProvider,
     ItalianHolidayCalendar,
@@ -139,7 +139,7 @@ def test_deadline_snapshot_does_not_change_when_calendar_provider_changes(tmp_pa
     assert schedule.public_holiday_review_required is False
 
 
-def test_incomplete_calendar_does_not_create_false_late_extension_rejection(tmp_path):
+def test_incomplete_calendar_does_not_activate_uncertain_extension(tmp_path):
     target_service, case_service = build_case_service(tmp_path)
     target = target_service.create_target("Italian Controller")
     assert target.id is not None
@@ -155,24 +155,40 @@ def test_incomplete_calendar_does_not_create_false_late_extension_rejection(tmp_
     assert recorded.extension_notified_on == "2026-03-03"
     assert recorded.deadline_snapshot is not None
     assert recorded.deadline_snapshot.public_holiday_review_required is True
+    assert (
+        case_service.extension_notice_assessment(recorded)
+        is ExtensionNoticeAssessment.REVIEW_REQUIRED
+    )
+    assert case_service.effective_deadline_for(recorded) == date(2026, 3, 2)
 
 
-def test_complete_calendar_still_rejects_definitively_late_extension(tmp_path):
+def test_complete_calendar_activates_timely_extension_and_rejects_late_one(tmp_path):
     provider = HolidayCalendarProvider((MutableCalendar(set()),))
     target_service, case_service = build_case_service(tmp_path, provider)
     target = target_service.create_target("Complete Calendar Controller")
     assert target.id is not None
-    case = case_service.create_case(target.id, CaseRight.ERASURE)
-    assert case.id is not None
-    submitted = case_service.submit_case(case.id, date(2026, 1, 31), "XX")
+
+    timely_case = case_service.create_case(target.id, CaseRight.ACCESS_PROVENANCE)
+    assert timely_case.id is not None
+    timely = case_service.submit_case(timely_case.id, date(2026, 1, 31), "XX")
+    timely = case_service.record_extension(timely_case.id, date(2026, 3, 2))
+    assert (
+        case_service.extension_notice_assessment(timely)
+        is ExtensionNoticeAssessment.TIMELY
+    )
+    assert case_service.effective_deadline_for(timely) == date(2026, 4, 30)
+
+    late_case = case_service.create_case(target.id, CaseRight.ERASURE)
+    assert late_case.id is not None
+    submitted = case_service.submit_case(late_case.id, date(2026, 1, 31), "XX")
     assert submitted.deadline_snapshot is not None
     assert submitted.deadline_snapshot.initial_due_on == date(2026, 3, 2)
     assert submitted.deadline_snapshot.public_holiday_review_required is False
 
     with pytest.raises(ValueError, match="within the initial one-month deadline"):
-        case_service.record_extension(case.id, date(2026, 3, 3))
+        case_service.record_extension(late_case.id, date(2026, 3, 3))
 
-    assert case_service.get_case(case.id).extension_notified_on is None
+    assert case_service.get_case(late_case.id).extension_notified_on is None
 
 
 def test_sqlite_rejects_partial_or_rewritten_deadline_snapshots(tmp_path):
