@@ -160,11 +160,11 @@ def test_sqlite_rejects_partial_or_rewritten_deadline_snapshots(tmp_path):
             """
         )
 
-    with pytest.raises(sqlite3.IntegrityError, match="snapshot must be complete"):
-        with database.transaction() as connection:
-            connection.execute(
-                "UPDATE cases SET deadline_jurisdiction = 'IT' WHERE id = 1"
-            )
+    with pytest.raises(
+        sqlite3.IntegrityError,
+        match="snapshot must be complete",
+    ), database.transaction() as connection:
+        connection.execute("UPDATE cases SET deadline_jurisdiction = 'IT' WHERE id = 1")
 
     with database.transaction() as connection:
         connection.execute(
@@ -180,8 +180,8 @@ def test_sqlite_rejects_partial_or_rewritten_deadline_snapshots(tmp_path):
             """
         )
 
-    with pytest.raises(sqlite3.IntegrityError, match="snapshot is immutable"):
-        with database.transaction() as connection:
-            connection.execute(
-                "UPDATE cases SET initial_due_on = '2026-06-04' WHERE id = 1"
-            )
+    with pytest.raises(
+        sqlite3.IntegrityError,
+        match="snapshot is immutable",
+    ), database.transaction() as connection:
+        connection.execute("UPDATE cases SET initial_due_on = '2026-06-04' WHERE id = 1")
