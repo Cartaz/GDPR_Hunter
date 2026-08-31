@@ -207,7 +207,7 @@ def test_delivery_event_table_is_append_only_and_schema_v8(tmp_path) -> None:
         connection.execute("DELETE FROM outbound_delivery_events WHERE id = ?", (recorded.id,))
 
 
-def test_mailto_url_preserves_approved_recipient_subject_and_body() -> None:
+def test_mailto_url_uses_rfc_6068_encoding_for_approved_content() -> None:
     subject = "GDPR request — Alice + Example"
     body = "Line one\nLine two & more? yes=1"
     url = build_mailto_url("privacy@example.test", subject, body)
@@ -217,8 +217,10 @@ def test_mailto_url_preserves_approved_recipient_subject_and_body() -> None:
 
     assert parsed.scheme == "mailto"
     assert parsed.path == "privacy@example.test"
+    assert "%2B" in encoded
+    assert "%0D%0A" in encoded
     assert query["subject"] == [subject]
-    assert query["body"] == [body]
+    assert query["body"] == ["Line one\r\nLine two & more? yes=1"]
 
 
 def test_frontend_handoff_can_supply_only_approved_request_id_and_approval() -> None:
