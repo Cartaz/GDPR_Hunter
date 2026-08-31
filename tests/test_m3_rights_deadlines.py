@@ -129,7 +129,7 @@ def test_submission_persists_immutable_jurisdiction_deadline_snapshot(tmp_path):
     assert row["holiday_calendar_complete"] == 0
 
 
-def test_late_extension_notice_is_rejected_without_mutation(tmp_path):
+def test_extension_notice_before_recorded_receipt_is_rejected_without_mutation(tmp_path):
     _database, target_service, case_service = build_case_service(tmp_path)
     target = target_service.create_target("Example Corp")
     assert target.id is not None
@@ -137,8 +137,8 @@ def test_late_extension_notice_is_rejected_without_mutation(tmp_path):
     assert case.id is not None
     case_service.submit_case(case.id, date(2026, 1, 31), "IT")
 
-    with pytest.raises(ValueError, match="within the initial one-month deadline"):
-        case_service.record_extension(case.id, date(2026, 3, 3))
+    with pytest.raises(ValueError, match="cannot precede"):
+        case_service.record_extension(case.id, date(2026, 1, 30))
 
     current = case_service.get_case(case.id)
     assert current.extension_notified_on is None
