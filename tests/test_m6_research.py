@@ -10,6 +10,7 @@ from core.application.identity_service import IdentityService
 from core.application.investigation_service import InvestigationService
 from core.application.network_policy import NetworkPolicy, NetworkPolicyError
 from core.application.research_service import (
+    ResearchCancelled,
     ResearchError,
     ResearchService,
     TransportResponse,
@@ -91,6 +92,25 @@ def test_research_enforces_content_type_size_and_redirect_limit():
 
     with pytest.raises(ResearchError, match="redirect limit"):
         ResearchService(policy, loop_transport).fetch_public_document("https://example.test/")
+
+
+def test_research_honours_cancellation_after_transport_before_processing():
+    policy = NetworkPolicy(resolver_for(PUBLIC_IP))
+    cancelled = False
+    calls = []
+
+    def transport(validated, _timeout, _max_bytes):
+        nonlocal cancelled
+        calls.append(validated.url)
+        cancelled = True
+        return TransportResponse(200, {"content-type": "text/plain"}, b"response")
+
+    with pytest.raises(ResearchCancelled, match="cancelled"):
+        ResearchService(policy, transport).fetch_public_document(
+            "https://example.test/",
+            cancel_requested=lambda: cancelled,
+        )
+    assert calls == ["https://example.test/"]
 
 
 def test_rdap_lookup_uses_iana_bootstrap_and_selected_https_service():
@@ -182,3 +202,39 @@ def test_investigation_research_requires_approval_and_records_remote_snapshot(tm
     again = service.research_artifact_urls(investigation.id, artifact.id, approved_by_user=True)
     assert again == []
     assert len(transport_calls) == 2
+
+
+def test_cancelled_investigation_research_does_not_persist_download(tmp_path):
+    cancelled = False
+
+    def transport(_validated, _timeout, _max_bytes):
+        nonlocal cancelled
+        cancelled = True
+        return TransportResponse(200, {"content-type": "text/plain"}, b"downloaded")
+
+    _database, service = build_investigation_service(tmp_path, transport)
+    investigation = service.create_investigation("Cancelled research")
+    assert investigation.id is not None
+    artifact = service.import_artifact(
+        investigation.id,
+        ArtifactKind.SMS,
+        ArtifactRole.TRIGGER,
+        "text/plain",
+        b"Visit https://example.test/privacy",
+    )
+    assert artifact.id is not None
+    service.analyze_artifact(investigation.id, artifact.id)
+
+    with pytest.raises(ResearchCancelled, match="cancelled"):
+        service.research_artifact_urls(
+            investigation.id,
+            artifact.id,
+            approved_by_user=True,
+            cancel_requested=lambda: cancelled,
+        )
+
+    assert len(service.list_artifacts(investigation.id)) == 1
+    assert all(
+        item.provenance is not EvidenceProvenance.REMOTE_DOCUMENT
+        for item in service.list_evidence(investigation.id)
+    )
