@@ -37,7 +37,7 @@ let backend = null;
 let currentState = null;
 let selectedInvestigationId = null;
 let selectedInvestigationDetail = null;
-let activeResearchArtifactId = null;
+let researchBusy = false;
 let activeModelInvestigationId = null;
 const proposalViews = new Map();
 
@@ -109,7 +109,7 @@ function analyzeArtifact(artifactId) {
 }
 
 function researchArtifactUrls(artifactId) {
-  if (!backend || !selectedInvestigationId || activeResearchArtifactId !== null) return;
+  if (!backend || !selectedInvestigationId || researchBusy) return;
   const approved = window.confirm(
     "Fetch the public URLs deterministically extracted from this artifact? Network access will be restricted by the research policy.",
   );
@@ -155,6 +155,22 @@ function acceptModelClaim(investigationId, token) {
   });
 }
 
+function executeModelResearch(investigationId, token, evidenceId) {
+  if (!backend || researchBusy) return;
+  const approved = window.confirm(
+    `Research the public URL stored in Evidence #${evidenceId}? The model cannot choose or modify the destination; Python will resolve it from persisted Evidence and enforce network policy.`,
+  );
+  if (!approved) return;
+  backend.executeModelResearchProposal(token, approved, (response) => {
+    if (response?.ok) {
+      removeProposalView(investigationId, token);
+      setStatus(`Reviewed research for Evidence #${evidenceId} started in the background.`);
+    } else if (response?.error?.message) {
+      setStatus(response.error.message, true);
+    }
+  });
+}
+
 function discardModelProposal(investigationId, token) {
   if (!backend) return;
   backend.discardModelProposal(token, (response) => {
@@ -188,13 +204,20 @@ function renderModelProposals(investigationId) {
       detail.textContent = `${proposal.statement} · Evidence ${proposal.evidenceIds.join(", ")}`;
     } else {
       title.textContent = `Research proposal · Evidence #${proposal.evidenceId}`;
-      detail.textContent = `${proposal.rationale} · execution is not enabled yet`;
+      detail.textContent = proposal.rationale;
     }
     info.append(title, detail);
     const actions = document.createElement("div");
     actions.className = "record-actions";
     if (proposal.kind === "CLAIM") {
       actions.appendChild(makeButton("Accept claim", () => acceptModelClaim(investigationId, proposal.token)));
+    } else {
+      const researchButton = makeButton(
+        "Research evidence",
+        () => executeModelResearch(investigationId, proposal.token, proposal.evidenceId),
+      );
+      researchButton.disabled = researchBusy;
+      actions.appendChild(researchButton);
     }
     actions.appendChild(makeButton("Discard", () => discardModelProposal(investigationId, proposal.token)));
     row.append(info, actions);
@@ -233,7 +256,7 @@ function renderInvestigationDetail(detail) {
     actions.className = "record-actions";
     actions.appendChild(makeButton("Analyze", () => analyzeArtifact(artifact.id)));
     const researchButton = makeButton("Research URLs", () => researchArtifactUrls(artifact.id));
-    researchButton.disabled = activeResearchArtifactId !== null;
+    researchButton.disabled = researchBusy;
     actions.appendChild(researchButton);
     row.append(info, actions);
     investigationDetailListNode.appendChild(row);
@@ -455,18 +478,34 @@ function connectBackend() {
     backend.stateChanged.connect((state) => renderState(state));
     backend.operationFailed.connect((_code, message) => setStatus(message, true));
     backend.researchStarted.connect((_investigationId, artifactId) => {
-      activeResearchArtifactId = artifactId;
+      researchBusy = true;
       setStatus(`Researching public URLs from artifact #${artifactId}…`);
       if (selectedInvestigationId) loadInvestigation(selectedInvestigationId);
     });
-    backend.researchCompleted.connect((investigationId, artifactId, result) => {
-      activeResearchArtifactId = null;
+    backend.researchCompleted.connect((investigationId, _artifactId, result) => {
+      researchBusy = false;
       const count = result?.createdCount ?? 0;
       setStatus(count ? `${count} research evidence item(s) recorded.` : "Research completed with no new evidence.");
       if (selectedInvestigationId === investigationId) loadInvestigation(investigationId);
     });
     backend.researchFailed.connect((investigationId, _artifactId, _code, message) => {
-      activeResearchArtifactId = null;
+      researchBusy = false;
+      setStatus(message, true);
+      if (selectedInvestigationId === investigationId) loadInvestigation(investigationId);
+    });
+    backend.modelResearchStarted.connect((investigationId, evidenceId) => {
+      researchBusy = true;
+      setStatus(`Researching model-proposed Evidence #${evidenceId}…`);
+      if (selectedInvestigationId === investigationId) renderModelProposals(investigationId);
+    });
+    backend.modelResearchCompleted.connect((investigationId, evidenceId, result) => {
+      researchBusy = false;
+      const count = result?.createdCount ?? 0;
+      setStatus(count ? `${count} reviewed research evidence item(s) recorded from Evidence #${evidenceId}.` : `Reviewed research for Evidence #${evidenceId} completed with no new evidence.`);
+      if (selectedInvestigationId === investigationId) loadInvestigation(investigationId);
+    });
+    backend.modelResearchFailed.connect((investigationId, _evidenceId, _code, message) => {
+      researchBusy = false;
       setStatus(message, true);
       if (selectedInvestigationId === investigationId) loadInvestigation(investigationId);
     });
