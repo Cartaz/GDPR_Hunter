@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import threading
 import time
+from collections.abc import Callable
 
 from PySide6.QtCore import QCoreApplication
 from PySide6.QtTest import QSignalSpy
@@ -12,6 +13,7 @@ from ui.research_runner import ResearchRunner
 class FakeResearchController:
     def __init__(self) -> None:
         self.worker_thread_id: int | None = None
+        self.cancel_requested: Callable[[], bool] | None = None
 
     def research_artifact_urls(
         self,
@@ -19,11 +21,15 @@ class FakeResearchController:
         artifact_id: int,
         *,
         approved_by_user: bool,
+        cancel_requested: Callable[[], bool] | None = None,
     ) -> dict[str, object]:
         assert investigation_id == 7
         assert artifact_id == 11
         assert approved_by_user is True
+        assert cancel_requested is not None
         self.worker_thread_id = threading.get_ident()
+        self.cancel_requested = cancel_requested
+        assert cancel_requested() is False
         return {"createdCount": 2, "evidence": []}
 
 
@@ -44,6 +50,7 @@ def test_research_runner_executes_use_case_off_calling_thread_and_returns_signal
 
         assert controller.worker_thread_id is not None
         assert controller.worker_thread_id != caller_thread_id
+        assert controller.cancel_requested is not None
         assert succeeded.count() == 1
         arguments = succeeded.at(0)
         assert arguments[0] == 7
