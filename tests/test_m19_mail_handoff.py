@@ -76,7 +76,7 @@ def build_services(tmp_path, mail_client: FakeMailClient | None = None):
 
 def create_approved_request(tmp_path, mail_client: FakeMailClient | None = None):
     services = build_services(tmp_path, mail_client)
-    database, identity, targets, cases, approvals, audit, events, client, delivery = services
+    _database, identity, targets, cases, approvals, _audit, _events, _client, _delivery = services
     identity.set_display_name("Alice Example")
     identifier = identity.add_identifier(IdentifierKind.EMAIL, "alice@example.test", "account")
     target = targets.create_target("Example Corp", "example.test", "privacy@example.test")
