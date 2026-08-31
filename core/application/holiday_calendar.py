@@ -30,11 +30,11 @@ class JurisdictionHolidayCalendar(Protocol):
 
 
 class ItalianHolidayCalendar:
-    """Italian national statutory holidays effective from 2026 onward.
+    """Italian national statutory holidays verified for 2001 onward.
 
     Local patronal holidays are deliberately excluded because they depend on the
     controller's place of action. This calendar therefore never claims complete
-    locality coverage.
+    locality coverage. The 4 October national holiday applies from 2026 onward.
     """
 
     jurisdiction_code = "IT"
@@ -42,25 +42,25 @@ class ItalianHolidayCalendar:
     complete = False
 
     def holidays(self, year: int) -> frozenset[date]:
-        if year < 2026:
+        if year < 2001:
             return frozenset()
         easter_monday = self._gregorian_easter_sunday(year) + timedelta(days=1)
-        return frozenset(
-            {
-                date(year, 1, 1),
-                date(year, 1, 6),
-                date(year, 4, 25),
-                easter_monday,
-                date(year, 5, 1),
-                date(year, 6, 2),
-                date(year, 8, 15),
-                date(year, 10, 4),
-                date(year, 11, 1),
-                date(year, 12, 8),
-                date(year, 12, 25),
-                date(year, 12, 26),
-            }
-        )
+        holidays = {
+            date(year, 1, 1),
+            date(year, 1, 6),
+            date(year, 4, 25),
+            easter_monday,
+            date(year, 5, 1),
+            date(year, 6, 2),
+            date(year, 8, 15),
+            date(year, 11, 1),
+            date(year, 12, 8),
+            date(year, 12, 25),
+            date(year, 12, 26),
+        }
+        if year >= 2026:
+            holidays.add(date(year, 10, 4))
+        return frozenset(holidays)
 
     @staticmethod
     def _gregorian_easter_sunday(year: int) -> date:
