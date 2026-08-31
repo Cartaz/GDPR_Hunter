@@ -39,7 +39,6 @@ class CaseService:
         rights_policy: RightsPolicy,
         deadline_engine: DeadlineEngine,
         holiday_calendar_provider: HolidayCalendarProvider | None = None,
-        request_composer: RequestComposer | None = None,
     ) -> None:
         self._repository = repository
         self._identity_service = identity_service
@@ -47,7 +46,7 @@ class CaseService:
         self._rights_policy = rights_policy
         self._deadline_engine = deadline_engine
         self._holiday_calendar_provider = holiday_calendar_provider or HolidayCalendarProvider()
-        self._request_composer = request_composer or RequestComposer(rights_policy)
+        self._request_composer = RequestComposer(rights_policy)
 
     def supported_rights(self) -> tuple[RightPolicy, ...]:
         return self._rights_policy.supported()
