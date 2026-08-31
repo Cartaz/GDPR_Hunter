@@ -12,8 +12,15 @@ const privacyEmailNode = document.getElementById("privacy-email");
 const targetListNode = document.getElementById("target-list");
 const caseListNode = document.getElementById("case-list");
 const caseRightNode = document.getElementById("case-right");
+const caseErasureGroundNode = document.getElementById("case-erasure-ground");
+const erasureGroundSummaryNode = document.getElementById("erasure-ground-summary");
 const caseJurisdictionNode = document.getElementById("case-jurisdiction");
 const rightSummaryNode = document.getElementById("right-summary");
+const requestPreviewNode = document.getElementById("request-preview");
+const requestPreviewTitleNode = document.getElementById("request-preview-title");
+const requestPreviewRecipientNode = document.getElementById("request-preview-recipient");
+const requestPreviewSubjectNode = document.getElementById("request-preview-subject");
+const requestPreviewBodyNode = document.getElementById("request-preview-body");
 const timelineTitleNode = document.getElementById("timeline-title");
 const timelineListNode = document.getElementById("timeline-list");
 const investigationForm = document.getElementById("investigation-form");
@@ -71,6 +78,24 @@ function localDateString() {
 function targetName(targetId) {
   const target = currentState?.targets?.find((item) => item.id === targetId);
   return target?.name ?? `Target #${targetId}`;
+}
+
+function clearRequestPreview() {
+  requestPreviewNode.hidden = true;
+  requestPreviewTitleNode.textContent = "Request preview";
+  requestPreviewRecipientNode.textContent = "";
+  requestPreviewSubjectNode.value = "";
+  requestPreviewBodyNode.value = "";
+}
+
+function renderRequestPreview(preview) {
+  requestPreviewTitleNode.textContent = `Request preview · ${preview.legalBasis}`;
+  requestPreviewRecipientNode.textContent = preview.recipientEmail
+    ? `To: ${preview.recipientName} <${preview.recipientEmail}>`
+    : `To: ${preview.recipientName} · no privacy email registered`;
+  requestPreviewSubjectNode.value = preview.subject;
+  requestPreviewBodyNode.value = preview.body;
+  requestPreviewNode.hidden = false;
 }
 
 function renderInvestigations(investigations) {
@@ -316,6 +341,30 @@ function renderRightSummary() {
   rightSummaryNode.textContent = right?.summary ?? "";
 }
 
+function renderErasureGrounds(grounds) {
+  const selected = caseErasureGroundNode.value;
+  clearNode(caseErasureGroundNode);
+  const placeholder = document.createElement("option");
+  placeholder.value = "";
+  placeholder.textContent = "Select an Article 17 ground";
+  caseErasureGroundNode.appendChild(placeholder);
+  for (const ground of grounds) {
+    const option = document.createElement("option");
+    option.value = ground.id;
+    option.textContent = `${ground.article} · ${ground.title}`;
+    caseErasureGroundNode.appendChild(option);
+  }
+  if (grounds.some((ground) => ground.id === selected)) caseErasureGroundNode.value = selected;
+  renderErasureGroundSummary();
+}
+
+function renderErasureGroundSummary() {
+  const ground = currentState?.erasureGrounds?.find((item) => item.id === caseErasureGroundNode.value);
+  erasureGroundSummaryNode.textContent = ground
+    ? `${ground.summary} Preview-only until a future dispatch is explicitly approved.`
+    : "Used only when previewing an erasure request. It is temporary until a future dispatch is explicitly approved.";
+}
+
 function renderTargets(targets) {
   clearNode(targetListNode);
   if (!targets.length) {
@@ -348,6 +397,25 @@ function makeDateAction(label, action) {
   const button = makeButton(label, () => action(input.value));
   wrapper.append(input, button);
   return wrapper;
+}
+
+function previewCaseRequest(caseItem) {
+  if (!backend || caseItem.right === "UNSPECIFIED") return;
+  const erasureGround = caseItem.right === "ERASURE" ? caseErasureGroundNode.value : "";
+  if (caseItem.right === "ERASURE" && !erasureGround) {
+    setStatus("Select the Article 17 ground before previewing an erasure request.", true);
+    caseErasureGroundNode.focus();
+    return;
+  }
+  backend.previewCaseRequest(caseItem.id, erasureGround, (response) => {
+    if (response?.error) {
+      setStatus(response.error.message, true);
+      clearRequestPreview();
+      return;
+    }
+    renderRequestPreview(response);
+    setStatus("Deterministic request preview generated locally. Nothing has been sent.");
+  });
 }
 
 function renderCases(cases) {
@@ -392,6 +460,9 @@ function renderCases(cases) {
     }
     const actions = document.createElement("div");
     actions.className = "record-actions";
+    if (caseItem.right !== "UNSPECIFIED") {
+      actions.appendChild(makeButton("Preview request", () => previewCaseRequest(caseItem)));
+    }
     actions.appendChild(makeButton("Timeline", () => loadTimeline(caseItem.id)));
     if (caseItem.status === "DRAFT" && caseItem.right !== "UNSPECIFIED") {
       actions.appendChild(makeDateAction("Record submission", (value) => submitCase(caseItem.id, value)));
@@ -415,8 +486,10 @@ function renderState(state) {
   targetCountNode.textContent = String(state.targets?.length ?? 0);
   caseCountNode.textContent = String(state.cases?.length ?? 0);
   displayNameNode.value = state.identity?.displayName ?? "";
+  clearRequestPreview();
   renderInvestigations(state.investigations ?? []);
   renderRights(state.rights ?? []);
+  renderErasureGrounds(state.erasureGrounds ?? []);
   renderTargets(state.targets ?? []);
   renderCases(state.cases ?? []);
   if (selectedInvestigationId) loadInvestigation(selectedInvestigationId);
@@ -558,6 +631,10 @@ function connectBackend() {
 }
 
 caseRightNode.addEventListener("change", renderRightSummary);
+caseErasureGroundNode.addEventListener("change", () => {
+  renderErasureGroundSummary();
+  clearRequestPreview();
+});
 caseJurisdictionNode.addEventListener("input", () => {
   caseJurisdictionNode.value = caseJurisdictionNode.value.toUpperCase();
 });
