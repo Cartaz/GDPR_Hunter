@@ -5,7 +5,6 @@ from urllib.parse import quote
 from PySide6.QtCore import QUrl
 from PySide6.QtGui import QDesktopServices
 
-
 _MAILBOX_SAFE = "@!$&'()*+,;=:-._~"
 
 
