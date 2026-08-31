@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from core.application.artifact_analyzer import ArtifactAnalyzer
-from core.application.egress_policy import EgressPolicy, OutboundIntent
+from core.application.egress_policy import EgressPolicy, OutboundActor, OutboundIntent
 from core.application.identity_service import IdentityService
 from core.application.research_service import (
     CancellationCheck,
@@ -138,8 +138,7 @@ class InvestigationService:
         cancel_requested: CancellationCheck | None = None,
     ) -> list[Evidence]:
         self._require_investigation(investigation_id)
-        if self._research_service is None or self._egress_policy is None:
-            raise RuntimeError("Research capability is not configured")
+        self._require_research_capability()
         self._raise_if_cancelled(cancel_requested)
 
         source_evidence = [
@@ -153,77 +152,142 @@ class InvestigationService:
         if not source_evidence:
             raise ValueError("Analyze the artifact before researching its public URLs")
 
-        existing = {
+        existing = self._research_fingerprints(investigation_id)
+        created: list[Evidence] = []
+        for source in source_evidence:
+            created.extend(
+                self._research_url_evidence(
+                    investigation_id,
+                    source,
+                    existing,
+                    approved_by_user=approved_by_user,
+                    actor=OutboundActor.USER,
+                    cancel_requested=cancel_requested,
+                )
+            )
+        return created
+
+    def research_model_evidence(
+        self,
+        investigation_id: int,
+        evidence_id: int,
+        *,
+        approved_by_user: bool,
+        cancel_requested: CancellationCheck | None = None,
+    ) -> list[Evidence]:
+        self._require_investigation(investigation_id)
+        self._require_research_capability()
+        self._raise_if_cancelled(cancel_requested)
+        if evidence_id <= 0:
+            raise ValueError("Evidence id must be positive")
+
+        source = next(
+            (item for item in self._repository.list_evidence(investigation_id) if item.id == evidence_id),
+            None,
+        )
+        if source is None:
+            raise LookupError("Evidence is not attached to this investigation")
+        return self._research_url_evidence(
+            investigation_id,
+            source,
+            self._research_fingerprints(investigation_id),
+            approved_by_user=approved_by_user,
+            actor=OutboundActor.MODEL,
+            cancel_requested=cancel_requested,
+        )
+
+    def _research_url_evidence(
+        self,
+        investigation_id: int,
+        source: Evidence,
+        existing: set[tuple[EvidenceProvenance, str | None, str | None]],
+        *,
+        approved_by_user: bool,
+        actor: OutboundActor,
+        cancel_requested: CancellationCheck | None,
+    ) -> list[Evidence]:
+        self._raise_if_cancelled(cancel_requested)
+        source_url = source.value
+        if source_url is None or not source_url.lower().startswith(("http://", "https://")):
+            raise ValueError("Research Evidence must contain an HTTP(S) URL")
+        marker = f"research.request:{source_url}"
+        fingerprint = (EvidenceProvenance.REMOTE_DOCUMENT, source_url, marker)
+        if fingerprint in existing:
+            return []
+
+        research_service, egress_policy = self._require_research_capability()
+        egress_policy.require_allowed(
+            OutboundIntent(
+                operation="PUBLIC_RESEARCH_FETCH",
+                destination=source_url,
+                data_class="PUBLIC_OR_OBSERVED_URL",
+                approved_by_user=approved_by_user,
+                actor=actor,
+            )
+        )
+        document = research_service.fetch_public_document(
+            source_url,
+            cancel_requested=cancel_requested,
+        )
+        # Persistence of one fetched document is a coherent unit. Honour a
+        # cancellation before starting that unit, not halfway through it.
+        self._raise_if_cancelled(cancel_requested)
+        reference = self.import_artifact(
+            investigation_id,
+            ArtifactKind.TEXT,
+            ArtifactRole.REFERENCE,
+            document.content_type,
+            document.body,
+        )
+        created = [
+            self.add_evidence(
+                investigation_id,
+                reference.id,
+                EvidenceKind.OBSERVATION,
+                EvidenceProvenance.REMOTE_DOCUMENT,
+                source_url,
+                marker,
+            )
+        ]
+        for index, hop in enumerate(document.redirects):
+            created.append(
+                self.add_evidence(
+                    investigation_id,
+                    reference.id,
+                    EvidenceKind.OBSERVATION,
+                    EvidenceProvenance.REMOTE_DOCUMENT,
+                    f"{hop.status} {hop.source_url} -> {hop.destination_url}",
+                    f"research.redirect[{index}]",
+                )
+            )
+        created.append(
+            self.add_evidence(
+                investigation_id,
+                reference.id,
+                EvidenceKind.OBSERVATION,
+                EvidenceProvenance.REMOTE_DOCUMENT,
+                document.final_url,
+                "research.final_url",
+            )
+        )
+        if reference.id is not None:
+            created.extend(self.analyze_artifact(investigation_id, reference.id))
+        existing.add(fingerprint)
+        return created
+
+    def _research_fingerprints(
+        self,
+        investigation_id: int,
+    ) -> set[tuple[EvidenceProvenance, str | None, str | None]]:
+        return {
             (item.provenance, item.value, item.source_locator)
             for item in self._repository.list_evidence(investigation_id)
         }
-        created: list[Evidence] = []
-        for source in source_evidence:
-            self._raise_if_cancelled(cancel_requested)
-            source_url = source.value
-            if source_url is None:
-                continue
-            marker = f"research.request:{source_url}"
-            if (EvidenceProvenance.REMOTE_DOCUMENT, source_url, marker) in existing:
-                continue
 
-            self._egress_policy.require_allowed(
-                OutboundIntent(
-                    operation="PUBLIC_RESEARCH_FETCH",
-                    destination=source_url,
-                    data_class="PUBLIC_OR_OBSERVED_URL",
-                    approved_by_user=approved_by_user,
-                )
-            )
-            document = self._research_service.fetch_public_document(
-                source_url,
-                cancel_requested=cancel_requested,
-            )
-            # Persistence of one fetched document is a coherent unit. Honour a
-            # cancellation before starting that unit, not halfway through it.
-            self._raise_if_cancelled(cancel_requested)
-            reference = self.import_artifact(
-                investigation_id,
-                ArtifactKind.TEXT,
-                ArtifactRole.REFERENCE,
-                document.content_type,
-                document.body,
-            )
-            created.append(
-                self.add_evidence(
-                    investigation_id,
-                    reference.id,
-                    EvidenceKind.OBSERVATION,
-                    EvidenceProvenance.REMOTE_DOCUMENT,
-                    source_url,
-                    marker,
-                )
-            )
-            for index, hop in enumerate(document.redirects):
-                created.append(
-                    self.add_evidence(
-                        investigation_id,
-                        reference.id,
-                        EvidenceKind.OBSERVATION,
-                        EvidenceProvenance.REMOTE_DOCUMENT,
-                        f"{hop.status} {hop.source_url} -> {hop.destination_url}",
-                        f"research.redirect[{index}]",
-                    )
-                )
-            created.append(
-                self.add_evidence(
-                    investigation_id,
-                    reference.id,
-                    EvidenceKind.OBSERVATION,
-                    EvidenceProvenance.REMOTE_DOCUMENT,
-                    document.final_url,
-                    "research.final_url",
-                )
-            )
-            if reference.id is not None:
-                created.extend(self.analyze_artifact(investigation_id, reference.id))
-            existing.add((EvidenceProvenance.REMOTE_DOCUMENT, source_url, marker))
-        return created
+    def _require_research_capability(self) -> tuple[ResearchService, EgressPolicy]:
+        if self._research_service is None or self._egress_policy is None:
+            raise RuntimeError("Research capability is not configured")
+        return self._research_service, self._egress_policy
 
     def add_evidence(
         self,
