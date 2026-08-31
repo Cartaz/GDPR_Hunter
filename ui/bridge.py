@@ -397,7 +397,7 @@ class Bridge(QObject):
     @staticmethod
     def _identifier_ids(value: object) -> tuple[int, ...]:
         if not isinstance(value, list):
-            raise ValueError("Identifier disclosure selection must be a list")
+            raise TypeError("Identifier disclosure selection must be a list")
         result: list[int] = []
         for item in value:
             if (
@@ -413,7 +413,7 @@ class Bridge(QObject):
     def _read(self, operation):
         try:
             return operation()
-        except (ValueError, LookupError) as exc:
+        except (TypeError, ValueError, LookupError) as exc:
             return self._fail("INVALID_INPUT", str(exc))
         except (OSError, sqlite3.Error):
             _LOG.exception("Bridge read operation failed")
@@ -422,7 +422,7 @@ class Bridge(QObject):
     def _mutate(self, operation) -> dict[str, object]:
         try:
             result = operation()
-        except (ValueError, LookupError) as exc:
+        except (TypeError, ValueError, LookupError) as exc:
             return self._fail("INVALID_INPUT", str(exc))
         except (OSError, sqlite3.Error):
             _LOG.exception("Bridge mutation failed")
