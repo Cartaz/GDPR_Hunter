@@ -75,21 +75,30 @@ def test_reviewed_model_research_uses_only_opaque_token_and_approval_from_fronte
     assert "evidence_id:" not in research_slot
 
 
-def test_case_submission_requires_explicit_jurisdiction_without_location_inference():
+def test_case_submission_requires_explicit_payload_jurisdiction_and_confirmation():
     html = (ROOT / "ui" / "web" / "index.html").read_text(encoding="utf-8")
     javascript = (ROOT / "ui" / "web" / "js" / "app.js").read_text(encoding="utf-8")
     bridge = (ROOT / "ui" / "bridge.py").read_text(encoding="utf-8")
 
     assert 'id="case-jurisdiction"' in html
     assert "place where the controller must act" in html
+    assert "selecting an immutable approved payload" in html
     assert "caseJurisdictionNode.value" in javascript
-    assert "backend.submitCase(caseId, receivedOn, jurisdiction" in javascript
+    assert "backend.submitCase(" in javascript
+    assert "approvedRequestId" in javascript
+    assert "actually transmitted" in javascript
     assert "navigator.geolocation" not in javascript
-    assert "def submitCase(" in bridge
     submit_slot = bridge.split("def submitCase", 1)[1].split("def recordCaseExtension", 1)[0]
+    assert "case_id: int" in submit_slot
+    assert "approved_request_id: int" in submit_slot
+    assert "received_on: str" in submit_slot
     assert "jurisdiction_code: str" in submit_slot
+    assert "confirmed_by_user: bool" in submit_slot
     assert "target_domain" not in submit_slot
     assert "location" not in submit_slot
+    assert "subject" not in submit_slot
+    assert "body" not in submit_slot
+    assert "recipient" not in submit_slot
 
 
 def test_request_preview_is_read_only_python_composed_and_identifier_opt_in():
@@ -118,7 +127,8 @@ def test_request_approval_cannot_supply_or_override_outbound_payload_from_javasc
     bridge = (ROOT / "ui" / "bridge.py").read_text(encoding="utf-8")
 
     assert 'id="approve-request-button"' in html
-    assert "Nothing has been sent, queued or handed to an external mail client." in html
+    assert "Approval stores an encrypted, immutable copy" in html
+    assert "only after actual transmission" in html
     assert "backend.approveCaseRequest(" in javascript
     approval_call = javascript.split("backend.approveCaseRequest(", 1)[1].split(");", 1)[0]
     assert "context.caseId" in approval_call
@@ -128,7 +138,7 @@ def test_request_approval_cannot_supply_or_override_outbound_payload_from_javasc
     assert "requestPreviewSubjectNode.value" not in approval_call
     assert "requestPreviewBodyNode.value" not in approval_call
 
-    approval_slot = bridge.split("def approveCaseRequest", 1)[1].split("def submitCase", 1)[0]
+    approval_slot = bridge.split("def approveCaseRequest", 1)[1].split("def handoffApprovedRequest", 1)[0]
     assert "case_id: int" in approval_slot
     assert "erasure_ground: str" in approval_slot
     assert "identifier_ids: object" in approval_slot
