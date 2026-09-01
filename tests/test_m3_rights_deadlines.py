@@ -15,6 +15,7 @@ from core.storage.database import Database
 from core.storage.identity_repository import IdentityRepository
 from core.storage.sensitive_store import SensitiveStore
 from core.storage.target_repository import TargetRepository
+from tests.submission_support import create_approved_request_fixture
 
 TEST_KEY = b"r" * 32
 
@@ -85,7 +86,13 @@ def test_submission_persists_immutable_jurisdiction_deadline_snapshot(tmp_path):
 
     case = case_service.create_case(target.id, CaseRight.ACCESS_PROVENANCE)
     assert case.id is not None
-    submitted = case_service.submit_case(case.id, date(2026, 1, 31), "it")
+    approved_request_id = create_approved_request_fixture(database, TEST_KEY, case.id)
+    submitted = case_service.submit_case(
+        case.id,
+        approved_request_id,
+        date(2026, 1, 31),
+        "it",
+    )
     schedule = case_service.deadline_for(submitted)
 
     assert submitted.status is CaseStatus.AWAITING_RESPONSE
@@ -102,6 +109,10 @@ def test_submission_persists_immutable_jurisdiction_deadline_snapshot(tmp_path):
     assert schedule.initial_due_on == date(2026, 3, 2)
     assert schedule.extended_due_on == date(2026, 4, 30)
     assert schedule.public_holiday_review_required is True
+
+    binding = case_service.list_submission_bindings()[0]
+    assert binding.case_id == case.id
+    assert binding.approved_request_id == approved_request_id
 
     extended = case_service.record_extension(case.id, date(2026, 2, 28))
     assert extended.extension_notified_on == "2026-02-28"
@@ -130,12 +141,13 @@ def test_submission_persists_immutable_jurisdiction_deadline_snapshot(tmp_path):
 
 
 def test_extension_notice_before_recorded_receipt_is_rejected_without_mutation(tmp_path):
-    _database, target_service, case_service = build_case_service(tmp_path)
+    database, target_service, case_service = build_case_service(tmp_path)
     target = target_service.create_target("Example Corp")
     assert target.id is not None
     case = case_service.create_case(target.id, CaseRight.ERASURE)
     assert case.id is not None
-    case_service.submit_case(case.id, date(2026, 1, 31), "IT")
+    approved_request_id = create_approved_request_fixture(database, TEST_KEY, case.id)
+    case_service.submit_case(case.id, approved_request_id, date(2026, 1, 31), "IT")
 
     with pytest.raises(ValueError, match="cannot precede"):
         case_service.record_extension(case.id, date(2026, 1, 30))
