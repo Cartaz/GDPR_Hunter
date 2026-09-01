@@ -229,7 +229,7 @@ def test_frontend_loads_response_content_on_demand_not_in_bootstrap() -> None:
     root = Path(__file__).resolve().parents[1]
     controller = (root / "core" / "application" / "app_controller.py").read_text(encoding="utf-8")
     bridge = (root / "ui" / "bridge.py").read_text(encoding="utf-8")
-    javascript = (root / "ui" / "web" / "js" / "app.js").read_text(encoding="utf-8")
+    javascript = (root / "ui" / "web" / "js" / "case_workflow.js").read_text(encoding="utf-8")
 
     bootstrap = controller.split("def get_bootstrap_state", 1)[1].split("def set_display_name", 1)[0]
     assert "list_case_responses" not in bootstrap
@@ -251,3 +251,5 @@ def test_frontend_loads_response_content_on_demand_not_in_bootstrap() -> None:
     assert "backend.getCaseResponse(responseId" in javascript
     assert "backend.recordCaseResponse(" in javascript
     assert "loadCaseResponses(selectedResponseCaseId)" in javascript
+    assert "selectedResponseCaseId !== requestedCaseId" in javascript
+    assert "resetResponseDraft()" in javascript
