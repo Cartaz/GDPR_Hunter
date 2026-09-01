@@ -17,7 +17,7 @@ class UnsupportedSchemaVersion(DatabaseSchemaError):
 class Database:
     """Own SQLite connection setup, lifecycle, schema compatibility, migrations, and transactions."""
 
-    CURRENT_SCHEMA_VERSION = 9
+    CURRENT_SCHEMA_VERSION = 10
 
     def __init__(self, path: Path) -> None:
         self._path = path
@@ -112,6 +112,7 @@ class Database:
             self._create_approved_outbound_request_schema_v7(connection)
             self._create_outbound_delivery_event_schema_v8(connection)
             self._create_case_submission_binding_schema_v9(connection)
+            self._create_case_response_schema_v10(connection)
             connection.execute(
                 """
                 INSERT INTO schema_meta(id, schema_version, created_at, last_migrated_at)
@@ -157,6 +158,11 @@ class Database:
                 self._create_case_submission_binding_schema_v9(connection)
                 self._set_schema_version(connection, expected=8, target=9)
             return 9
+        if from_version == 9:
+            with connection:
+                self._create_case_response_schema_v10(connection)
+                self._set_schema_version(connection, expected=9, target=10)
+            return 10
         raise UnsupportedSchemaVersion(f"No migration path from database schema version {from_version}")
 
     @staticmethod
@@ -588,6 +594,42 @@ class Database:
             BEFORE DELETE ON case_submission_bindings
             BEGIN
                 SELECT RAISE(ABORT, 'case submission bindings are append-only');
+            END
+            """,
+        )
+        for statement in statements:
+            connection.execute(statement)
+
+    @staticmethod
+    def _create_case_response_schema_v10(connection: sqlite3.Connection) -> None:
+        statements = (
+            """
+            CREATE TABLE case_responses (
+                id INTEGER PRIMARY KEY,
+                case_id INTEGER NOT NULL REFERENCES cases(id) ON DELETE RESTRICT,
+                channel TEXT NOT NULL CHECK (
+                    channel IN ('EMAIL', 'POSTAL_MAIL', 'WEB_PORTAL', 'PHONE', 'OTHER')
+                ),
+                received_on TEXT NOT NULL,
+                sender_enc BLOB,
+                subject_enc BLOB,
+                body_enc BLOB NOT NULL,
+                recorded_at TEXT NOT NULL
+            )
+            """,
+            "CREATE INDEX idx_case_responses_case_id ON case_responses(case_id, received_on, id)",
+            """
+            CREATE TRIGGER case_responses_no_update
+            BEFORE UPDATE ON case_responses
+            BEGIN
+                SELECT RAISE(ABORT, 'case responses are append-only');
+            END
+            """,
+            """
+            CREATE TRIGGER case_responses_no_delete
+            BEFORE DELETE ON case_responses
+            BEGIN
+                SELECT RAISE(ABORT, 'case responses are append-only');
             END
             """,
         )
