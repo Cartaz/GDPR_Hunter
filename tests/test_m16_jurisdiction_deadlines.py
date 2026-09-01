@@ -19,6 +19,7 @@ from core.storage.database import Database
 from core.storage.identity_repository import IdentityRepository
 from core.storage.sensitive_store import SensitiveStore
 from core.storage.target_repository import TargetRepository
+from tests.submission_support import create_approved_request_fixture
 
 TEST_KEY = b"j" * 32
 
@@ -48,7 +49,11 @@ def build_case_service(tmp_path, provider: HolidayCalendarProvider | None = None
         DeadlineEngine(),
         provider,
     )
-    return target_service, service
+    return database, target_service, service
+
+
+def approve_case(database: Database, case_id: int) -> int:
+    return create_approved_request_fixture(database, TEST_KEY, case_id)
 
 
 def test_italian_calendar_encodes_verified_2026_national_holidays_but_requires_local_review():
@@ -80,13 +85,18 @@ def test_provider_never_infers_or_fabricates_unsupported_jurisdiction_calendar()
 
 
 def test_italian_submission_rolls_statutory_holiday_and_preserves_review_flag(tmp_path):
-    target_service, case_service = build_case_service(tmp_path)
+    database, target_service, case_service = build_case_service(tmp_path)
     target = target_service.create_target("Italian Controller")
     assert target.id is not None
     case = case_service.create_case(target.id, CaseRight.ACCESS_PROVENANCE)
     assert case.id is not None
 
-    submitted = case_service.submit_case(case.id, date(2026, 5, 2), "IT")
+    submitted = case_service.submit_case(
+        case.id,
+        approve_case(database, case.id),
+        date(2026, 5, 2),
+        "IT",
+    )
 
     assert submitted.deadline_snapshot is not None
     assert submitted.deadline_snapshot.initial_due_on == date(2026, 6, 3)
@@ -98,13 +108,18 @@ def test_italian_submission_rolls_statutory_holiday_and_preserves_review_flag(tm
 
 
 def test_unsupported_jurisdiction_is_snapshotted_without_silent_holiday_claim(tmp_path):
-    target_service, case_service = build_case_service(tmp_path)
+    database, target_service, case_service = build_case_service(tmp_path)
     target = target_service.create_target("German Controller")
     assert target.id is not None
     case = case_service.create_case(target.id, CaseRight.ERASURE)
     assert case.id is not None
 
-    submitted = case_service.submit_case(case.id, date(2026, 5, 2), "DE")
+    submitted = case_service.submit_case(
+        case.id,
+        approve_case(database, case.id),
+        date(2026, 5, 2),
+        "DE",
+    )
 
     assert submitted.deadline_snapshot is not None
     assert submitted.deadline_snapshot.jurisdiction_code == "DE"
@@ -117,13 +132,18 @@ def test_unsupported_jurisdiction_is_snapshotted_without_silent_holiday_claim(tm
 def test_deadline_snapshot_does_not_change_when_calendar_provider_changes(tmp_path):
     calendar = MutableCalendar({date(2026, 6, 2)})
     provider = HolidayCalendarProvider((calendar,))
-    target_service, case_service = build_case_service(tmp_path, provider)
+    database, target_service, case_service = build_case_service(tmp_path, provider)
     target = target_service.create_target("Snapshot Controller")
     assert target.id is not None
     case = case_service.create_case(target.id, CaseRight.ACCESS_PROVENANCE)
     assert case.id is not None
 
-    submitted = case_service.submit_case(case.id, date(2026, 5, 2), "XX")
+    submitted = case_service.submit_case(
+        case.id,
+        approve_case(database, case.id),
+        date(2026, 5, 2),
+        "XX",
+    )
     assert submitted.deadline_snapshot is not None
     assert submitted.deadline_snapshot.initial_due_on == date(2026, 6, 3)
     assert submitted.deadline_snapshot.holiday_calendar_complete is True
@@ -140,12 +160,17 @@ def test_deadline_snapshot_does_not_change_when_calendar_provider_changes(tmp_pa
 
 
 def test_incomplete_calendar_does_not_activate_uncertain_extension(tmp_path):
-    target_service, case_service = build_case_service(tmp_path)
+    database, target_service, case_service = build_case_service(tmp_path)
     target = target_service.create_target("Italian Controller")
     assert target.id is not None
     case = case_service.create_case(target.id, CaseRight.ERASURE)
     assert case.id is not None
-    submitted = case_service.submit_case(case.id, date(2026, 1, 31), "IT")
+    submitted = case_service.submit_case(
+        case.id,
+        approve_case(database, case.id),
+        date(2026, 1, 31),
+        "IT",
+    )
     assert submitted.deadline_snapshot is not None
     assert submitted.deadline_snapshot.initial_due_on == date(2026, 3, 2)
     assert submitted.deadline_snapshot.public_holiday_review_required is True
@@ -164,13 +189,18 @@ def test_incomplete_calendar_does_not_activate_uncertain_extension(tmp_path):
 
 def test_complete_calendar_activates_timely_extension_and_rejects_late_one(tmp_path):
     provider = HolidayCalendarProvider((MutableCalendar(set()),))
-    target_service, case_service = build_case_service(tmp_path, provider)
+    database, target_service, case_service = build_case_service(tmp_path, provider)
     target = target_service.create_target("Complete Calendar Controller")
     assert target.id is not None
 
     timely_case = case_service.create_case(target.id, CaseRight.ACCESS_PROVENANCE)
     assert timely_case.id is not None
-    timely = case_service.submit_case(timely_case.id, date(2026, 1, 31), "XX")
+    timely = case_service.submit_case(
+        timely_case.id,
+        approve_case(database, timely_case.id),
+        date(2026, 1, 31),
+        "XX",
+    )
     timely = case_service.record_extension(timely_case.id, date(2026, 3, 2))
     assert (
         case_service.extension_notice_assessment(timely)
@@ -180,7 +210,12 @@ def test_complete_calendar_activates_timely_extension_and_rejects_late_one(tmp_p
 
     late_case = case_service.create_case(target.id, CaseRight.ERASURE)
     assert late_case.id is not None
-    submitted = case_service.submit_case(late_case.id, date(2026, 1, 31), "XX")
+    submitted = case_service.submit_case(
+        late_case.id,
+        approve_case(database, late_case.id),
+        date(2026, 1, 31),
+        "XX",
+    )
     assert submitted.deadline_snapshot is not None
     assert submitted.deadline_snapshot.initial_due_on == date(2026, 3, 2)
     assert submitted.deadline_snapshot.public_holiday_review_required is False
