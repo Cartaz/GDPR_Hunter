@@ -13,6 +13,7 @@ def test_local_es_module_loads_through_production_webengine_stack() -> None:
     environment.update(
         {
             "QT_QPA_PLATFORM": "offscreen",
+            "QT_QUICK_BACKEND": "software",
             "QTWEBENGINE_CHROMIUM_FLAGS": "--disable-gpu",
             "QTWEBENGINE_DISABLE_SANDBOX": "1",
         }
