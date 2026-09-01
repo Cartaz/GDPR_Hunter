@@ -138,7 +138,7 @@
 
           <label for="case-jurisdiction">Controller action jurisdiction</label>
           <input id="case-jurisdiction" maxlength="2" autocomplete="off" placeholder="IT" aria-describedby="jurisdiction-summary">
-          <p id="jurisdiction-summary" class="muted policy-summary">Enter the two-letter country code for the place where the controller must act. It is snapshotted when submission is recorded; unsupported or incomplete local calendars remain explicitly reviewable.</p>
+          <p id="jurisdiction-summary" class="muted policy-summary">Enter the two-letter country code for the place where the controller must act. A new submission can be recorded only by selecting an immutable approved payload and explicitly confirming that it was actually transmitted. The entered date is the controller receipt date used for the jurisdiction/deadline snapshot; unsupported or incomplete local calendars remain explicitly reviewable.</p>
           <div id="case-list" class="record-list" aria-live="polite"></div>
 
           <div id="request-preview" class="stack-form compact-form" hidden aria-labelledby="request-preview-title">
@@ -149,7 +149,7 @@
             <label for="request-preview-body">Body</label>
             <textarea id="request-preview-body" rows="16" readonly></textarea>
             <button id="approve-request-button" class="action-button" type="button">Approve exact payload</button>
-            <p class="muted">Approval stores an encrypted, immutable copy of exactly this Python-generated recipient, subject and body for a future outbound attempt. Nothing has been sent, queued or handed to an external mail client.</p>
+            <p class="muted">Approval stores an encrypted, immutable copy of exactly this Python-generated recipient, subject and body. It may later be opened in the system mail client and, only after actual transmission, selected as the exact payload bound to the Case submission.</p>
           </div>
         </article>
       </section>

@@ -181,7 +181,7 @@ def test_non_draft_case_cannot_handoff_approved_payload(tmp_path) -> None:
     assert audit.list_entries() == []
 
 
-def test_delivery_event_table_is_append_only_and_schema_v8(tmp_path) -> None:
+def test_delivery_event_table_remains_append_only_after_later_schema_migrations(tmp_path) -> None:
     services, _case, approved = create_approved_request(tmp_path)
     database, _identity, _targets, _cases, _approvals, _audit, events, _client, _delivery = services
     recorded = events.record(
@@ -196,7 +196,7 @@ def test_delivery_event_table_is_append_only_and_schema_v8(tmp_path) -> None:
         version = connection.execute(
             "SELECT schema_version FROM schema_meta WHERE id = 1"
         ).fetchone()[0]
-    assert version == 8
+    assert version == Database.CURRENT_SCHEMA_VERSION
 
     with pytest.raises(sqlite3.IntegrityError), database.transaction() as connection:
         connection.execute(

@@ -135,15 +135,30 @@ class Bridge(QObject):
             )
         )
 
-    @Slot(int, str, str, result="QVariant")
+    @Slot(int, int, str, str, bool, result="QVariant")
     def submitCase(
         self,
         case_id: int,
+        approved_request_id: int,
         received_on: str,
         jurisdiction_code: str,
+        confirmed_by_user: bool,
     ) -> dict[str, object]:
+        if case_id <= 0 or approved_request_id <= 0:
+            return self._fail("INVALID_INPUT", "Case and approved request ids must be positive")
+        if not confirmed_by_user:
+            return self._fail(
+                "APPROVAL_REQUIRED",
+                "Recording a sent payload requires explicit user confirmation",
+            )
         return self._mutate(
-            lambda: self._controller.submit_case(case_id, received_on, jurisdiction_code)
+            lambda: self._controller.submit_case(
+                case_id,
+                approved_request_id,
+                received_on,
+                jurisdiction_code,
+                confirmed_by_user=True,
+            )
         )
 
     @Slot(int, str, result="QVariant")

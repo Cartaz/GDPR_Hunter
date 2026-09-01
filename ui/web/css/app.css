@@ -187,6 +187,8 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .action-button { padding: 8px 11px; font-size: 12px; }
 .date-action { display: flex; align-items: center; gap: 7px; }
 .date-action input { width: 142px; padding: 8px 9px; font-size: 12px; }
+.submission-action { flex-wrap: wrap; justify-content: flex-end; max-width: 100%; }
+.submission-action select { width: min(230px, 100%); padding: 8px 9px; font-size: 12px; }
 .empty-state { margin: 0; }
 
 .timeline-event { padding: 12px 0; border-bottom: 1px solid rgb(38, 38, 38); }

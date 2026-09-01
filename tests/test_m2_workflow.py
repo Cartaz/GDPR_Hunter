@@ -16,6 +16,7 @@ from core.storage.database import Database
 from core.storage.identity_repository import IdentityRepository
 from core.storage.sensitive_store import SensitiveStore
 from core.storage.target_repository import TargetRepository
+from tests.submission_support import create_approved_request_fixture
 
 TEST_KEY = b"m" * 32
 
@@ -62,8 +63,14 @@ def test_case_workflow_records_append_only_timeline(tmp_path):
     case = case_service.create_case(target.id, CaseRight.ACCESS_PROVENANCE)
     assert case.id is not None
     assert case.status is CaseStatus.DRAFT
+    approved_request_id = create_approved_request_fixture(database, TEST_KEY, case.id)
 
-    submitted = case_service.submit_case(case.id, date(2026, 8, 25), "IT")
+    submitted = case_service.submit_case(
+        case.id,
+        approved_request_id,
+        date(2026, 8, 25),
+        "IT",
+    )
     completed = case_service.transition_case(case.id, CaseStatus.COMPLETED)
     timeline = case_service.list_timeline(case.id)
 
@@ -96,14 +103,20 @@ def test_invalid_case_transition_does_not_append_event(tmp_path):
 
 
 def test_cancelled_case_is_terminal(tmp_path):
-    _database, target_service, case_service = build_services(tmp_path)
+    database, target_service, case_service = build_services(tmp_path)
     target = target_service.create_target("Example Corp")
     assert target.id is not None
     case = case_service.create_case(target.id, CaseRight.DIRECT_MARKETING_OBJECTION)
     assert case.id is not None
+    approved_request_id = create_approved_request_fixture(database, TEST_KEY, case.id)
 
     cancelled = case_service.transition_case(case.id, CaseStatus.CANCELLED)
     assert cancelled.status is CaseStatus.CANCELLED
 
     with pytest.raises(ValueError, match="Invalid case transition"):
-        case_service.submit_case(case.id, date(2026, 8, 25), "IT")
+        case_service.submit_case(
+            case.id,
+            approved_request_id,
+            date(2026, 8, 25),
+            "IT",
+        )
