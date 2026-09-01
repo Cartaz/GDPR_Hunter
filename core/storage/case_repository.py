@@ -6,11 +6,12 @@ from datetime import date
 
 from core.domain.case import Case, CaseDeadlineSnapshot, CaseEvent, CaseStatus
 from core.domain.rights import CaseRight
+from core.domain.submission import CaseSubmissionBinding
 from core.storage.database import Database
 
 
 class CaseRepository:
-    """Persist cases and append-only timeline events atomically."""
+    """Persist cases, immutable submission bindings, and append-only timeline events atomically."""
 
     def __init__(self, database: Database) -> None:
         self._database = database
@@ -61,6 +62,7 @@ class CaseRepository:
         self,
         case_id: int,
         expected: CaseStatus,
+        approved_request_id: int,
         received_on: date,
         deadline_snapshot: CaseDeadlineSnapshot,
     ) -> Case:
@@ -93,6 +95,19 @@ class CaseRepository:
             )
             if cursor.rowcount != 1:
                 raise LookupError("Case changed, was already submitted, or no longer exists")
+
+            binding_cursor = connection.execute(
+                """
+                INSERT INTO case_submission_bindings(case_id, approved_request_id, confirmed_at)
+                SELECT ?, id, datetime('now')
+                FROM approved_outbound_requests
+                WHERE id = ? AND case_id = ?
+                """,
+                (case_id, approved_request_id, case_id),
+            )
+            if binding_cursor.rowcount != 1:
+                raise LookupError("Approved request not found or does not belong to this case")
+
             connection.execute(
                 """
                 INSERT INTO case_events(case_id, event_type, from_status, to_status, created_at)
@@ -104,6 +119,25 @@ class CaseRepository:
         if row is None:
             raise RuntimeError("Submitted case could not be reloaded")
         return self._case_from_row(row)
+
+    def get_submission_binding(self, case_id: int) -> CaseSubmissionBinding | None:
+        with self._database.connection_scope() as connection:
+            row = connection.execute(
+                "SELECT case_id, approved_request_id, confirmed_at FROM case_submission_bindings WHERE case_id = ?",
+                (case_id,),
+            ).fetchone()
+        return self._submission_binding_from_row(row) if row is not None else None
+
+    def list_submission_bindings(self) -> list[CaseSubmissionBinding]:
+        with self._database.connection_scope() as connection:
+            rows = connection.execute(
+                """
+                SELECT case_id, approved_request_id, confirmed_at
+                FROM case_submission_bindings
+                ORDER BY confirmed_at DESC, case_id DESC
+                """
+            ).fetchall()
+        return [self._submission_binding_from_row(row) for row in rows]
 
     def record_extension(self, case_id: int, notified_on: date) -> Case:
         with self._database.transaction() as connection:
@@ -217,6 +251,14 @@ class CaseRepository:
             holiday_dates=holiday_dates,
             holiday_source=str(row["holiday_source"]),
             holiday_calendar_complete=bool(complete),
+        )
+
+    @staticmethod
+    def _submission_binding_from_row(row: sqlite3.Row) -> CaseSubmissionBinding:
+        return CaseSubmissionBinding(
+            case_id=int(row["case_id"]),
+            approved_request_id=int(row["approved_request_id"]),
+            confirmed_at=str(row["confirmed_at"]),
         )
 
     @staticmethod
