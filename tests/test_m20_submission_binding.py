@@ -154,6 +154,9 @@ def test_v8_migration_does_not_invent_binding_for_historical_submission(tmp_path
             )
             """
         )
+        connection.execute("DROP TRIGGER case_responses_no_update")
+        connection.execute("DROP TRIGGER case_responses_no_delete")
+        connection.execute("DROP TABLE case_responses")
         connection.execute("DROP TRIGGER case_submission_bindings_no_update")
         connection.execute("DROP TRIGGER case_submission_bindings_no_delete")
         connection.execute("DROP TABLE case_submission_bindings")
@@ -166,11 +169,13 @@ def test_v8_migration_does_not_invent_binding_for_historical_submission(tmp_path
             "SELECT schema_version FROM schema_meta WHERE id = 1"
         ).fetchone()[0]
         bindings = connection.execute("SELECT * FROM case_submission_bindings").fetchall()
+        responses = connection.execute("SELECT * FROM case_responses").fetchall()
         legacy_case = connection.execute(
             "SELECT status, received_on FROM cases WHERE id = 1"
         ).fetchone()
-    assert version == 9
+    assert version == Database.CURRENT_SCHEMA_VERSION
     assert bindings == []
+    assert responses == []
     assert legacy_case["status"] == "AWAITING_RESPONSE"
     assert legacy_case["received_on"] == "2026-08-01"
 
