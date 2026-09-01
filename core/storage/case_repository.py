@@ -120,14 +120,6 @@ class CaseRepository:
             raise RuntimeError("Submitted case could not be reloaded")
         return self._case_from_row(row)
 
-    def get_submission_binding(self, case_id: int) -> CaseSubmissionBinding | None:
-        with self._database.connection_scope() as connection:
-            row = connection.execute(
-                "SELECT case_id, approved_request_id, confirmed_at FROM case_submission_bindings WHERE case_id = ?",
-                (case_id,),
-            ).fetchone()
-        return self._submission_binding_from_row(row) if row is not None else None
-
     def list_submission_bindings(self) -> list[CaseSubmissionBinding]:
         with self._database.connection_scope() as connection:
             rows = connection.execute(
