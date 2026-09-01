@@ -513,6 +513,23 @@ function approveCurrentRequest() {
   );
 }
 
+function handoffApprovedRequest(approvedRequestId) {
+  if (!backend) return;
+  const approved = window.confirm(
+    `Open approved payload #${approvedRequestId} in the system mail client? Python will load exactly the immutable recipient, subject and body already approved. Opening the mail client is not proof that the message was sent.`,
+  );
+  if (!approved) return;
+  backend.handoffApprovedRequest(approvedRequestId, approved, (response) => {
+    if (response?.ok && response.result?.accepted) {
+      setStatus(`Approved payload #${approvedRequestId} opened in the system mail client. Record submission only after you actually send it.`);
+    } else if (response?.ok) {
+      setStatus("The operating system did not accept the mail-client handoff. Nothing was sent.", true);
+    } else if (response?.error?.message) {
+      setStatus(response.error.message, true);
+    }
+  });
+}
+
 function renderCases(cases) {
   clearNode(caseListNode);
   if (!cases.length) {
@@ -532,11 +549,19 @@ function renderCases(cases) {
     detail.textContent = `Case #${caseItem.id} · ${caseItem.article ?? "Legacy"} · ${caseItem.rightTitle} · ${caseItem.status}`;
     info.append(title, detail);
     const approvals = (currentState?.approvedRequests ?? []).filter((item) => item.caseId === caseItem.id);
-    if (approvals.length) {
-      const approval = approvals[0];
+    const approval = approvals[0] ?? null;
+    if (approval) {
       const approvedDetail = document.createElement("small");
-      approvedDetail.textContent = `Latest approved payload #${approval.id} · ${approval.approvedAt} · not sent`;
+      approvedDetail.textContent = `Latest approved payload #${approval.id} · ${approval.approvedAt} · not automatically sent`;
       info.appendChild(approvedDetail);
+      const deliveryEvent = (currentState?.deliveryEvents ?? []).find(
+        (item) => item.approvedRequestId === approval.id,
+      );
+      if (deliveryEvent) {
+        const deliveryDetail = document.createElement("small");
+        deliveryDetail.textContent = `Latest mail handoff event: ${deliveryEvent.type} · ${deliveryEvent.createdAt}`;
+        info.appendChild(deliveryDetail);
+      }
     }
     if (caseItem.effectiveDueOn) {
       const due = document.createElement("small");
@@ -565,6 +590,11 @@ function renderCases(cases) {
     if (caseItem.right !== "UNSPECIFIED") {
       actions.appendChild(makeButton("Preview request", () => previewCaseRequest(caseItem)));
     }
+    if (caseItem.status === "DRAFT" && approval) {
+      actions.appendChild(
+        makeButton("Open approved payload", () => handoffApprovedRequest(approval.id)),
+      );
+    }
     actions.appendChild(makeButton("Timeline", () => loadTimeline(caseItem.id)));
     if (caseItem.status === "DRAFT" && caseItem.right !== "UNSPECIFIED") {
       actions.appendChild(makeDateAction("Record submission", (value) => submitCase(caseItem.id, value)));
@@ -583,7 +613,7 @@ function renderCases(cases) {
 
 function renderState(state) {
   currentState = state;
-  milestoneNode.textContent = state.milestone ?? "M18";
+  milestoneNode.textContent = state.milestone ?? "M19";
   investigationCountNode.textContent = String(state.investigations?.length ?? 0);
   targetCountNode.textContent = String(state.targets?.length ?? 0);
   caseCountNode.textContent = String(state.cases?.length ?? 0);

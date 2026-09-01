@@ -21,6 +21,7 @@ from core.application.investigation_service import InvestigationService
 from core.application.model_analysis_service import ModelAnalysisService
 from core.application.model_proposal_parser import ModelProposalParser
 from core.application.network_policy import NetworkPolicy
+from core.application.outbound_delivery_service import OutboundDeliveryService
 from core.application.paths import default_app_paths
 from core.application.proposal_review_service import ProposalReviewService
 from core.application.request_approval_service import RequestApprovalService
@@ -33,6 +34,7 @@ from core.storage.approved_outbound_request_repository import (
 from core.storage.artifact_store import ArtifactStore
 from core.storage.case_repository import CaseRepository
 from core.storage.database import Database
+from core.storage.delivery_event_repository import DeliveryEventRepository
 from core.storage.identity_repository import IdentityRepository
 from core.storage.investigation_repository import InvestigationRepository
 from core.storage.outbound_audit_repository import OutboundAuditRepository
@@ -41,6 +43,7 @@ from core.storage.sensitive_store import SensitiveStore
 from core.storage.target_repository import TargetRepository
 from ui.bridge import Bridge
 from ui.model_analysis_runner import ModelAnalysisRunner
+from ui.native_mail import SystemMailClientHandoff
 from ui.research_runner import ResearchRunner
 from ui.window import MainWindow
 
@@ -103,9 +106,16 @@ def build_controller() -> tuple[
         case_service,
         ApprovedOutboundRequestRepository(database, sensitive_store),
     )
+    egress_policy = EgressPolicy(OutboundAuditRepository(database, sensitive_store))
+    outbound_delivery_service = OutboundDeliveryService(
+        request_approval_service,
+        case_service,
+        egress_policy,
+        DeliveryEventRepository(database),
+        SystemMailClientHandoff(),
+    )
     network_policy = NetworkPolicy()
     research_service = ResearchService(network_policy)
-    egress_policy = EgressPolicy(OutboundAuditRepository(database, sensitive_store))
     investigation_service = InvestigationService(
         InvestigationRepository(database, sensitive_store),
         ArtifactStore(paths.artifacts_dir, sensitive_store),
@@ -129,6 +139,7 @@ def build_controller() -> tuple[
             case_service,
             investigation_service,
             request_approval_service,
+            outbound_delivery_service,
         ),
         model_analysis_service,
         ProposalReviewService(investigation_service),

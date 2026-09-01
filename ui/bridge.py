@@ -115,6 +115,26 @@ class Bridge(QObject):
             )
         )
 
+    @Slot(int, bool, result="QVariant")
+    def handoffApprovedRequest(
+        self,
+        approved_request_id: int,
+        approved_by_user: bool,
+    ) -> dict[str, object]:
+        if approved_request_id <= 0:
+            return self._fail("INVALID_INPUT", "Approved request id must be positive")
+        if not approved_by_user:
+            return self._fail(
+                "APPROVAL_REQUIRED",
+                "Opening an approved request in the system mail client requires explicit user approval",
+            )
+        return self._mutate(
+            lambda: self._controller.handoff_approved_request(
+                approved_request_id,
+                approved_by_user=True,
+            )
+        )
+
     @Slot(int, str, str, result="QVariant")
     def submitCase(
         self,

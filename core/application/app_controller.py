@@ -5,10 +5,12 @@ from datetime import date
 from core.application.case_service import CaseService
 from core.application.identity_service import IdentityService
 from core.application.investigation_service import InvestigationService
+from core.application.outbound_delivery_service import OutboundDeliveryService
 from core.application.request_approval_service import RequestApprovalService
 from core.application.research_service import CancellationCheck
 from core.application.target_service import TargetService
 from core.domain.case import Case, CaseEvent, CaseStatus
+from core.domain.delivery import DeliveryAttemptResult, DeliveryEvent
 from core.domain.identity import Identifier, IdentifierKind
 from core.domain.investigation import (
     Artifact,
@@ -44,12 +46,14 @@ class AppController:
         case_service: CaseService,
         investigation_service: InvestigationService,
         request_approval_service: RequestApprovalService,
+        outbound_delivery_service: OutboundDeliveryService,
     ) -> None:
         self._identity_service = identity_service
         self._target_service = target_service
         self._case_service = case_service
         self._investigation_service = investigation_service
         self._request_approval_service = request_approval_service
+        self._outbound_delivery_service = outbound_delivery_service
 
     def get_bootstrap_state(self) -> dict[str, object]:
         identity = self._identity_service.get_identity()
@@ -58,6 +62,7 @@ class AppController:
         cases = self._case_service.list_cases()
         investigations = self._investigation_service.list_investigations()
         approvals = self._request_approval_service.list_summaries()
+        delivery_events = self._outbound_delivery_service.list_latest_events()
         return {
             "identity": {
                 "displayName": identity.display_name,
@@ -71,8 +76,9 @@ class AppController:
             ],
             "cases": [self._case_dto(case) for case in cases],
             "approvedRequests": [self._approved_request_summary_dto(item) for item in approvals],
+            "deliveryEvents": [self._delivery_event_dto(item) for item in delivery_events],
             "investigations": [self._investigation_dto(item) for item in investigations],
-            "milestone": "M18 — Approved Outbound Payloads",
+            "milestone": "M19 — Reviewed Mail Client Handoff",
             "features": {
                 "investigatorCore": True,
                 "artifactAnalysis": True,
@@ -88,6 +94,7 @@ class AppController:
                 "jurisdictionDeadlines": True,
                 "requestComposition": True,
                 "requestApproval": True,
+                "mailClientHandoff": True,
             },
         }
 
@@ -151,6 +158,18 @@ class AppController:
             approved_by_user=approved_by_user,
         )
         return self._approved_request_dto(request)
+
+    def handoff_approved_request(
+        self,
+        approved_request_id: int,
+        *,
+        approved_by_user: bool,
+    ) -> dict[str, object]:
+        result = self._outbound_delivery_service.handoff_approved_request(
+            approved_request_id,
+            approved_by_user=approved_by_user,
+        )
+        return self._delivery_attempt_result_dto(result)
 
     def submit_case(
         self,
@@ -387,6 +406,24 @@ class AppController:
             "identifierIds": list(request.identifier_ids),
             "erasureGround": request.erasure_ground.value if request.erasure_ground else None,
             "approvedAt": request.approved_at,
+        }
+
+    @staticmethod
+    def _delivery_attempt_result_dto(result: DeliveryAttemptResult) -> dict[str, object]:
+        return {
+            "attemptId": result.attempt_id,
+            "approvedRequestId": result.approved_request_id,
+            "accepted": result.accepted,
+        }
+
+    @staticmethod
+    def _delivery_event_dto(event: DeliveryEvent) -> dict[str, object]:
+        return {
+            "id": event.id,
+            "attemptId": event.attempt_id,
+            "approvedRequestId": event.approved_request_id,
+            "type": event.event_type.value,
+            "createdAt": event.created_at,
         }
 
     @staticmethod

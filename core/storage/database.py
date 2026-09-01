@@ -17,7 +17,7 @@ class UnsupportedSchemaVersion(DatabaseSchemaError):
 class Database:
     """Own SQLite connection setup, lifecycle, schema compatibility, migrations, and transactions."""
 
-    CURRENT_SCHEMA_VERSION = 7
+    CURRENT_SCHEMA_VERSION = 8
 
     def __init__(self, path: Path) -> None:
         self._path = path
@@ -110,6 +110,7 @@ class Database:
             self._create_investigation_schema_v4(connection)
             self._create_outbound_audit_schema_v5(connection)
             self._create_approved_outbound_request_schema_v7(connection)
+            self._create_outbound_delivery_event_schema_v8(connection)
             connection.execute(
                 """
                 INSERT INTO schema_meta(id, schema_version, created_at, last_migrated_at)
@@ -145,6 +146,11 @@ class Database:
                 self._create_approved_outbound_request_schema_v7(connection)
                 self._set_schema_version(connection, expected=6, target=7)
             return 7
+        if from_version == 7:
+            with connection:
+                self._create_outbound_delivery_event_schema_v8(connection)
+                self._set_schema_version(connection, expected=7, target=8)
+            return 8
         raise UnsupportedSchemaVersion(f"No migration path from database schema version {from_version}")
 
     @staticmethod
@@ -512,6 +518,41 @@ class Database:
             BEFORE DELETE ON approved_outbound_requests
             BEGIN
                 SELECT RAISE(ABORT, 'approved outbound requests are append-only');
+            END
+            """,
+        )
+        for statement in statements:
+            connection.execute(statement)
+
+    @staticmethod
+    def _create_outbound_delivery_event_schema_v8(connection: sqlite3.Connection) -> None:
+        statements = (
+            """
+            CREATE TABLE outbound_delivery_events (
+                id INTEGER PRIMARY KEY,
+                attempt_id TEXT NOT NULL,
+                approved_request_id INTEGER NOT NULL
+                    REFERENCES approved_outbound_requests(id) ON DELETE RESTRICT,
+                event_type TEXT NOT NULL CHECK (
+                    event_type IN ('HANDOFF_REQUESTED', 'HANDOFF_ACCEPTED', 'HANDOFF_REJECTED')
+                ),
+                created_at TEXT NOT NULL
+            )
+            """,
+            "CREATE INDEX idx_outbound_delivery_events_request ON outbound_delivery_events(approved_request_id, id)",
+            "CREATE INDEX idx_outbound_delivery_events_attempt ON outbound_delivery_events(attempt_id, id)",
+            """
+            CREATE TRIGGER outbound_delivery_events_no_update
+            BEFORE UPDATE ON outbound_delivery_events
+            BEGIN
+                SELECT RAISE(ABORT, 'outbound delivery events are append-only');
+            END
+            """,
+            """
+            CREATE TRIGGER outbound_delivery_events_no_delete
+            BEFORE DELETE ON outbound_delivery_events
+            BEGIN
+                SELECT RAISE(ABORT, 'outbound delivery events are append-only');
             END
             """,
         )
