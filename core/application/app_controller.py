@@ -33,6 +33,7 @@ from core.domain.rights import (
     ErasureGroundPolicy,
     RightPolicy,
 )
+from core.domain.submission import CaseSubmissionBinding
 from core.domain.target import Target
 
 
@@ -60,6 +61,7 @@ class AppController:
         identifiers = self._identity_service.list_identifiers()
         targets = self._target_service.list_targets()
         cases = self._case_service.list_cases()
+        submission_bindings = self._case_service.list_submission_bindings()
         investigations = self._investigation_service.list_investigations()
         approvals = self._request_approval_service.list_summaries()
         delivery_events = self._outbound_delivery_service.list_latest_events()
@@ -77,8 +79,11 @@ class AppController:
             "cases": [self._case_dto(case) for case in cases],
             "approvedRequests": [self._approved_request_summary_dto(item) for item in approvals],
             "deliveryEvents": [self._delivery_event_dto(item) for item in delivery_events],
+            "submissionBindings": [
+                self._submission_binding_dto(item) for item in submission_bindings
+            ],
             "investigations": [self._investigation_dto(item) for item in investigations],
-            "milestone": "M19 — Reviewed Mail Client Handoff",
+            "milestone": "M20 — Confirmed Submission Binding",
             "features": {
                 "investigatorCore": True,
                 "artifactAnalysis": True,
@@ -95,6 +100,7 @@ class AppController:
                 "requestComposition": True,
                 "requestApproval": True,
                 "mailClientHandoff": True,
+                "confirmedSubmission": True,
             },
         }
 
@@ -174,12 +180,18 @@ class AppController:
     def submit_case(
         self,
         case_id: int,
+        approved_request_id: int,
         received_on: str,
         jurisdiction_code: str,
+        *,
+        confirmed_by_user: bool,
     ) -> dict[str, object]:
+        if not confirmed_by_user:
+            raise PermissionError("Recording a sent payload requires explicit user confirmation")
         return self._case_dto(
             self._case_service.submit_case(
                 case_id,
+                approved_request_id,
                 self._parse_date(received_on),
                 jurisdiction_code,
             )
@@ -424,6 +436,14 @@ class AppController:
             "approvedRequestId": event.approved_request_id,
             "type": event.event_type.value,
             "createdAt": event.created_at,
+        }
+
+    @staticmethod
+    def _submission_binding_dto(binding: CaseSubmissionBinding) -> dict[str, object]:
+        return {
+            "caseId": binding.case_id,
+            "approvedRequestId": binding.approved_request_id,
+            "confirmedAt": binding.confirmed_at,
         }
 
     @staticmethod
