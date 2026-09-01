@@ -17,7 +17,7 @@ class UnsupportedSchemaVersion(DatabaseSchemaError):
 class Database:
     """Own SQLite connection setup, lifecycle, schema compatibility, migrations, and transactions."""
 
-    CURRENT_SCHEMA_VERSION = 8
+    CURRENT_SCHEMA_VERSION = 9
 
     def __init__(self, path: Path) -> None:
         self._path = path
@@ -111,6 +111,7 @@ class Database:
             self._create_outbound_audit_schema_v5(connection)
             self._create_approved_outbound_request_schema_v7(connection)
             self._create_outbound_delivery_event_schema_v8(connection)
+            self._create_case_submission_binding_schema_v9(connection)
             connection.execute(
                 """
                 INSERT INTO schema_meta(id, schema_version, created_at, last_migrated_at)
@@ -151,6 +152,11 @@ class Database:
                 self._create_outbound_delivery_event_schema_v8(connection)
                 self._set_schema_version(connection, expected=7, target=8)
             return 8
+        if from_version == 8:
+            with connection:
+                self._create_case_submission_binding_schema_v9(connection)
+                self._set_schema_version(connection, expected=8, target=9)
+            return 9
         raise UnsupportedSchemaVersion(f"No migration path from database schema version {from_version}")
 
     @staticmethod
@@ -553,6 +559,35 @@ class Database:
             BEFORE DELETE ON outbound_delivery_events
             BEGIN
                 SELECT RAISE(ABORT, 'outbound delivery events are append-only');
+            END
+            """,
+        )
+        for statement in statements:
+            connection.execute(statement)
+
+    @staticmethod
+    def _create_case_submission_binding_schema_v9(connection: sqlite3.Connection) -> None:
+        statements = (
+            """
+            CREATE TABLE case_submission_bindings (
+                case_id INTEGER PRIMARY KEY REFERENCES cases(id) ON DELETE RESTRICT,
+                approved_request_id INTEGER NOT NULL UNIQUE
+                    REFERENCES approved_outbound_requests(id) ON DELETE RESTRICT,
+                confirmed_at TEXT NOT NULL
+            )
+            """,
+            """
+            CREATE TRIGGER case_submission_bindings_no_update
+            BEFORE UPDATE ON case_submission_bindings
+            BEGIN
+                SELECT RAISE(ABORT, 'case submission bindings are append-only');
+            END
+            """,
+            """
+            CREATE TRIGGER case_submission_bindings_no_delete
+            BEFORE DELETE ON case_submission_bindings
+            BEGIN
+                SELECT RAISE(ABORT, 'case submission bindings are append-only');
             END
             """,
         )
