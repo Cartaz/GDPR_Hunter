@@ -4,24 +4,34 @@ GDPR Hunter is a local-first desktop privacy application under active developmen
 
 ## Current status
 
-Milestone **M19 — Reviewed Mail Client Handoff** is implemented on the current development branch. GDPR Hunter can open one immutable, previously approved GDPR request in the operating system's default mail client after a second explicit user approval. **A successful handoff means only that the operating system accepted the request to open the mail client; GDPR Hunter does not claim that the email was sent.**
+Milestone **M20 — Confirmed Submission Binding** is implemented on the current development branch. A newly recorded GDPR Case submission must now identify the exact immutable approved payload that the user explicitly confirms was actually transmitted. The payload binding, Case transition, controller receipt date and jurisdiction/deadline snapshot are persisted atomically. **This confirmation is user-provided provenance; GDPR Hunter still does not claim independently verified email delivery.**
 
-M8 introduced bounded OpenAI-compatible inference without tools or direct application authority. M9 added strict inert `CLAIM` and `RESEARCH_EVIDENCE` proposals. M10 added encrypted append-only outbound auditing. M11 added explicitly reviewed, atomic Claim acceptance. M12 connected bounded Investigation Evidence to inference and strict proposal parsing without mutation. M13 moved model analysis onto an owned Qt worker and wired configured inference into production. M14 added Python-owned opaque proposal identities and one-use Claim review. M15 added explicitly reviewed research-proposal execution while keeping outbound destinations under Python policy control. M16 added explicit controller-action jurisdiction and immutable deadline/calendar snapshots. M17 added deterministic local request composition for Articles 15, 17 and 21. M18 added encrypted append-only approved outbound payloads.
+M8 introduced bounded OpenAI-compatible inference without tools or direct application authority. M9 added strict inert `CLAIM` and `RESEARCH_EVIDENCE` proposals. M10 added encrypted append-only outbound auditing. M11 added explicitly reviewed, atomic Claim acceptance. M12 connected bounded Investigation Evidence to inference and strict proposal parsing without mutation. M13 moved model analysis onto an owned Qt worker and wired configured inference into production. M14 added Python-owned opaque proposal identities and one-use Claim review. M15 added explicitly reviewed research-proposal execution while keeping outbound destinations under Python policy control. M16 added explicit controller-action jurisdiction and immutable deadline/calendar snapshots. M17 added deterministic local request composition for Articles 15, 17 and 21. M18 added encrypted append-only approved outbound payloads. M19 added reviewed default-mail-client handoff without claiming that opening a mail client proves transmission.
 
-M19 adds a deliberately narrow first delivery boundary:
+M20 closes the provenance gap between approval and Case submission:
+
+- every newly recorded submission requires an exact `approved_request_id` belonging to that Case;
+- the UI exposes the Case's approval history and lets the user select the precise payload that was actually transmitted, rather than silently assuming the newest approval;
+- JavaScript and QWebChannel provide only Case ID, approved-request ID, controller receipt date, jurisdiction and an explicit confirmation boolean; recipient, subject and body cannot be supplied or rewritten at submission time;
+- `CaseService` keeps submission and deadline semantics in one use case while `CaseRepository` atomically persists the Case transition, immutable deadline snapshot, submission binding and existing `REQUEST_SUBMITTED` timeline event;
+- schema v9 adds `case_submission_bindings`, with one immutable binding per Case and one Case per approved payload; SQLite rejects updates and deletes;
+- a payload belonging to another Case causes the entire transaction to roll back, leaving the Case `DRAFT` with no deadline snapshot or submission event;
+- M19 handoff events are deliberately not required and are never interpreted as proof of sending; a user may have transmitted the approved payload through another client;
+- pre-M20 submitted Cases remain usable but are not assigned fabricated payload provenance. They may legitimately have no submission binding.
+
+M19 remains the deliberately narrow mail-client handoff boundary:
 
 - JavaScript may provide only an approved-request ID and an explicit approval boolean; it cannot provide or override the recipient, subject or body;
 - `OutboundDeliveryService` resolves the immutable approved payload by ID and never recomposes request content at handoff time;
 - the approved payload may be handed off only while its Case remains `DRAFT`;
 - the existing `EgressPolicy` authorizes and audits the outbound destination before native handoff;
-- the native adapter uses Qt `QDesktopServices` to open a `mailto:` URL in the operating system's default mail client; no SMTP credentials, provider API, generic network primitive or new dependency is introduced;
+- the native adapter uses Qt `QDesktopServices` to open an RFC 6068 `mailto:` URL in the operating system's default mail client; no SMTP credentials, provider API, generic network primitive or new dependency is introduced;
 - schema v8 adds append-only `outbound_delivery_events`, recording `HANDOFF_REQUESTED` followed by `HANDOFF_ACCEPTED` or `HANDOFF_REJECTED`;
 - delivery events contain only approved-request IDs, attempt IDs, event types and timestamps; recipient, subject and body are not duplicated into the event log;
 - an incomplete attempt may remain with only `HANDOFF_REQUESTED`, preserving crash ambiguity rather than inventing a terminal result;
-- `HANDOFF_ACCEPTED` is **not** evidence that the user pressed Send or that the controller received the request;
-- the Case is therefore not automatically moved to `AWAITING_RESPONSE`; the user records submission only after actual transmission is known.
+- `HANDOFF_ACCEPTED` is **not** evidence that the user pressed Send or that the controller received the request.
 
-M18 remains the approval boundary before any outbound handoff:
+M18 remains the approval boundary before any outbound handoff or confirmed submission:
 
 - identifiers stored in the Identity Vault remain excluded by default; the user explicitly selects which identifiers, if any, are disclosed to help the controller locate relevant records;
 - Python validates selected identifier IDs against the canonical local Identity and rejects duplicates, inactive identifiers or IDs that do not belong to the identity;
@@ -48,9 +58,9 @@ M16 remains the deadline foundation required for recorded submissions:
 - when an incomplete calendar makes timeliness uncertain, the notice is preserved for review but does not activate the three-month deadline: the initial calculated deadline remains active until the uncertainty is resolved;
 - extension handling and displayed deadlines use the stored snapshot rather than recalculating historical Cases against a newer holiday provider.
 
-`InvestigationService` remains the sole owner of Investigation/Evidence/Claim mutations. `CaseService` owns Case lifecycle, deadline semantics and request-preview orchestration. `RequestComposer` owns deterministic request wording. `RequestApprovalService` owns the transition from semantic review selection to a durable approved payload. `ApprovedOutboundRequestRepository` owns encrypted append-only approval persistence. `OutboundDeliveryService` owns the reviewed approved-ID-to-native-handoff use case. `DeliveryEventRepository` owns its append-only event log. `HolidayCalendarProvider` owns jurisdiction-calendar lookup only. The model has no filesystem, browser, arbitrary networking, command execution, generic network primitive, jurisdiction authority, request-composition authority, request-approval authority or mail-client handoff authority.
+`InvestigationService` remains the sole owner of Investigation/Evidence/Claim mutations. `CaseService` owns Case lifecycle, confirmed-submission semantics, deadline semantics and request-preview orchestration. `CaseRepository` owns atomic Case persistence and the immutable submission binding. `RequestComposer` owns deterministic request wording. `RequestApprovalService` owns the transition from semantic review selection to a durable approved payload. `ApprovedOutboundRequestRepository` owns encrypted append-only approval persistence. `OutboundDeliveryService` owns the reviewed approved-ID-to-native-handoff use case. `DeliveryEventRepository` owns its append-only handoff event log. `HolidayCalendarProvider` owns jurisdiction-calendar lookup only. The model has no filesystem, browser, arbitrary networking, command execution, generic network primitive, jurisdiction authority, request-composition authority, request-approval authority, mail-client handoff authority or submission-confirmation authority.
 
-Supported GDPR Case workflows are Article 15 access/provenance, Article 17 erasure and Article 21(2)-(3) direct-marketing objection. Verified complete multi-jurisdiction/local holiday calendars, verifiable email transport/delivery receipts, response intake, monitoring and escalation remain future work.
+Supported GDPR Case workflows are Article 15 access/provenance, Article 17 erasure and Article 21(2)-(3) direct-marketing objection. Verified complete multi-jurisdiction/local holiday calendars, independently verifiable email transport/delivery receipts, response intake, monitoring and escalation remain future work.
 
 ## Architecture
 
@@ -58,10 +68,11 @@ Supported GDPR Case workflows are Article 15 access/provenance, Article 17 erasu
 - PySide6 / Qt6
 - QWebEngineView with local HTML/CSS/vanilla JavaScript only
 - QWebChannel with a single `backend` object
-- SQLite for operational persistence, append-only outbound audit, approved outbound payload records and delivery events
+- SQLite for operational persistence, append-only outbound audit, approved outbound payload records, delivery events and immutable submission bindings
 - Python owns canonical state and business logic
 - Sensitive personal/investigative data, audit destinations and approved outbound message contents are encrypted before persistence
-- `CaseService` owns Case lifecycle, deadline semantics and request-preview orchestration
+- `CaseService` owns Case lifecycle, confirmed-submission semantics, deadline semantics and request-preview orchestration
+- `CaseRepository` atomically persists Case lifecycle changes, immutable deadline snapshots and exact approved-payload submission bindings
 - `RequestComposer` owns deterministic request wording only
 - `RequestApprovalService` owns explicit request approval and exact-payload capture
 - `ApprovedOutboundRequestRepository` owns encrypted append-only approved-payload persistence
@@ -70,7 +81,6 @@ Supported GDPR Case workflows are Article 15 access/provenance, Article 17 erasu
 - `SystemMailClientHandoff` is the narrow Qt-native adapter for the default mail client
 - `HolidayCalendarProvider` owns explicit jurisdiction-to-calendar resolution with source/version metadata
 - `DeadlineEngine` owns calendar-month arithmetic, working-day roll-forward and extension-timeliness assessment
-- `CaseRepository` atomically persists Case lifecycle changes and immutable deadline snapshots
 - `InvestigationService` owns Investigation/Evidence/Claim mutations and semantic research orchestration
 - `InvestigationRepository` provides atomic persistence operations for aggregate changes
 - `ArtifactAnalyzer` is deterministic and has no network authority
@@ -108,4 +118,4 @@ chmod +x install.sh
 
 ## Security posture
 
-The application is designed around local-first processing, explicit outbound-data control, encrypted sensitive persistence, append-only audit records, immutable Artifact metadata, evidence provenance, deterministic parsing, SSRF-resistant bounded research, owned asynchronous execution, bounded inference/context, strict model-output validation, opaque one-use model proposal identities, explicit review gates and separation between LLM proposals and canonical application state. Request composition, approval and mail-client handoff are Python-owned; the frontend cannot override generated or approved message contents. M19 resolves exactly one immutable approved request by ID, audits its destination, and records an append-only handoff event without claiming transport success beyond the operating system accepting the mail-client open request. Historical deadline snapshots retain the legal/calendar inputs used when the user explicitly records submission.
+The application is designed around local-first processing, explicit outbound-data control, encrypted sensitive persistence, append-only audit records, immutable Artifact metadata, evidence provenance, deterministic parsing, SSRF-resistant bounded research, owned asynchronous execution, bounded inference/context, strict model-output validation, opaque one-use model proposal identities, explicit review gates and separation between LLM proposals and canonical application state. Request composition, approval, mail-client handoff and confirmed submission are Python-owned; the frontend cannot override generated or approved message contents. M20 records which exact immutable payload the user confirms was transmitted while preserving M19 handoff as a distinct, weaker event that never implies sending. Historical deadline snapshots retain the legal/calendar inputs used when the user explicitly records submission, and historical pre-M20 submissions are not given invented payload provenance.
