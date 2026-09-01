@@ -12,14 +12,18 @@ def test_local_es_module_loads_through_production_webengine_stack() -> None:
     environment = os.environ.copy()
     environment.update(
         {
-            "QT_QPA_PLATFORM": "offscreen",
-            "QT_QUICK_BACKEND": "software",
+            "QT_QPA_PLATFORM": "xcb",
             "QTWEBENGINE_CHROMIUM_FLAGS": "--disable-gpu",
             "QTWEBENGINE_DISABLE_SANDBOX": "1",
         }
     )
     completed = subprocess.run(
-        [sys.executable, str(ROOT / "tests" / "webengine_smoke_runner.py")],
+        [
+            "xvfb-run",
+            "-a",
+            sys.executable,
+            str(ROOT / "tests" / "webengine_smoke_runner.py"),
+        ],
         cwd=ROOT,
         env=environment,
         capture_output=True,
