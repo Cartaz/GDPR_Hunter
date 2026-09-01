@@ -95,7 +95,7 @@ def test_response_must_follow_submission_and_waiting_state(tmp_path) -> None:
 
 
 def test_response_round_trips_encrypted_content_and_summary_omits_sensitive_fields(tmp_path) -> None:
-    database, _cases, repository, service, case = build_submitted_case(tmp_path)
+    database, _cases, _repository, service, case = build_submitted_case(tmp_path)
     sender = "privacy@example.test"
     subject = "Your GDPR request"
     body = "We have located the relevant records."
