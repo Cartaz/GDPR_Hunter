@@ -173,6 +173,48 @@ class Bridge(QObject):
     def getCaseTimeline(self, case_id: int) -> list[dict[str, object]] | dict[str, object]:
         return self._read(lambda: self._controller.get_case_timeline(case_id))
 
+    @Slot(int, str, str, str, str, str, bool, result="QVariant")
+    def recordCaseResponse(
+        self,
+        case_id: int,
+        channel: str,
+        received_on: str,
+        sender: str,
+        subject: str,
+        body: str,
+        confirmed_by_user: bool,
+    ) -> dict[str, object]:
+        if case_id <= 0:
+            return self._fail("INVALID_INPUT", "Case id must be positive")
+        if not confirmed_by_user:
+            return self._fail(
+                "APPROVAL_REQUIRED",
+                "Recording a controller response requires explicit user confirmation",
+            )
+        return self._mutate(
+            lambda: self._controller.record_case_response(
+                case_id,
+                channel,
+                received_on,
+                sender or None,
+                subject or None,
+                body,
+                confirmed_by_user=True,
+            )
+        )
+
+    @Slot(int, result="QVariant")
+    def listCaseResponses(self, case_id: int) -> list[dict[str, object]] | dict[str, object]:
+        if case_id <= 0:
+            return self._fail("INVALID_INPUT", "Case id must be positive")
+        return self._read(lambda: self._controller.list_case_responses(case_id))
+
+    @Slot(int, result="QVariant")
+    def getCaseResponse(self, response_id: int) -> dict[str, object]:
+        if response_id <= 0:
+            return self._fail("INVALID_INPUT", "Response id must be positive")
+        return self._read(lambda: self._controller.get_case_response(response_id))
+
     @Slot(str, result="QVariant")
     def createInvestigation(self, title: str) -> dict[str, object]:
         return self._mutate(lambda: self._controller.create_investigation(title))
