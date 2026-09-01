@@ -183,7 +183,7 @@ def test_v8_migration_does_not_invent_binding_for_historical_submission(tmp_path
 def test_frontend_and_bridge_submit_only_semantic_binding_inputs() -> None:
     root = Path(__file__).resolve().parents[1]
     bridge = (root / "ui" / "bridge.py").read_text(encoding="utf-8")
-    javascript = (root / "ui" / "web" / "js" / "app.js").read_text(encoding="utf-8")
+    javascript = (root / "ui" / "web" / "js" / "case_workflow.js").read_text(encoding="utf-8")
 
     submit_slot = bridge.split("def submitCase", 1)[1].split("def recordCaseExtension", 1)[0]
     assert "case_id: int" in submit_slot
