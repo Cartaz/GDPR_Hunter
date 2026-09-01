@@ -26,6 +26,7 @@ from core.application.paths import default_app_paths
 from core.application.proposal_review_service import ProposalReviewService
 from core.application.request_approval_service import RequestApprovalService
 from core.application.research_service import ResearchService
+from core.application.response_intake_service import ResponseIntakeService
 from core.application.target_service import TargetService
 from core.domain.rights import RightsPolicy
 from core.storage.approved_outbound_request_repository import (
@@ -33,6 +34,7 @@ from core.storage.approved_outbound_request_repository import (
 )
 from core.storage.artifact_store import ArtifactStore
 from core.storage.case_repository import CaseRepository
+from core.storage.case_response_repository import CaseResponseRepository
 from core.storage.database import Database
 from core.storage.delivery_event_repository import DeliveryEventRepository
 from core.storage.identity_repository import IdentityRepository
@@ -106,6 +108,10 @@ def build_controller() -> tuple[
         case_service,
         ApprovedOutboundRequestRepository(database, sensitive_store),
     )
+    response_intake_service = ResponseIntakeService(
+        case_service,
+        CaseResponseRepository(database, sensitive_store),
+    )
     egress_policy = EgressPolicy(OutboundAuditRepository(database, sensitive_store))
     outbound_delivery_service = OutboundDeliveryService(
         request_approval_service,
@@ -140,6 +146,7 @@ def build_controller() -> tuple[
             investigation_service,
             request_approval_service,
             outbound_delivery_service,
+            response_intake_service,
         ),
         model_analysis_service,
         ProposalReviewService(investigation_service),
