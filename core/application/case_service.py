@@ -25,6 +25,7 @@ from core.domain.rights import (
     RightPolicy,
     RightsPolicy,
 )
+from core.domain.submission import CaseSubmissionBinding
 from core.storage.case_repository import CaseRepository
 
 
@@ -86,9 +87,12 @@ class CaseService:
     def submit_case(
         self,
         case_id: int,
+        approved_request_id: int,
         received_on: date,
         jurisdiction_code: str,
     ) -> Case:
+        if isinstance(approved_request_id, bool) or approved_request_id <= 0:
+            raise ValueError("Approved request id must be positive")
         case = self.get_case(case_id)
         if case.right is CaseRight.UNSPECIFIED:
             raise ValueError("Legacy case must be recreated with a GDPR right before submission")
@@ -116,9 +120,13 @@ class CaseService:
         return self._repository.submit(
             case_id,
             case.status,
+            approved_request_id,
             received_on,
             deadline_snapshot,
         )
+
+    def list_submission_bindings(self) -> list[CaseSubmissionBinding]:
+        return self._repository.list_submission_bindings()
 
     def record_extension(self, case_id: int, notified_on: date) -> Case:
         case = self.get_case(case_id)
