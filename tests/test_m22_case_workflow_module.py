@@ -41,7 +41,7 @@ def wait_for_load(window: MainWindow, timeout_ms: int = 10_000) -> bool:
         loaded["ok"] = ok
         loop.quit()
 
-    window._view.loadFinished.connect(finish)  # noqa: SLF001 - focused UI smoke test
+    window._view.loadFinished.connect(finish)
     QTimer.singleShot(timeout_ms, loop.quit)
     loop.exec()
     return loaded["ok"]
@@ -55,7 +55,7 @@ def read_javascript(window: MainWindow, expression: str, timeout_ms: int = 5_000
         result["value"] = value
         loop.quit()
 
-    window._page.runJavaScript(expression, finish)  # noqa: SLF001 - focused UI smoke test
+    window._page.runJavaScript(expression, finish)
     QTimer.singleShot(timeout_ms, loop.quit)
     loop.exec()
     return result.get("value")
