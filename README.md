@@ -4,7 +4,18 @@ GDPR Hunter is a local-first desktop privacy application under active developmen
 
 ## Current status
 
-Milestone **M21 — Response Intake** is implemented on the current development branch. GDPR Hunter can manually record controller correspondence against a submitted Case while it is awaiting a response, preserving the raw response locally without interpreting it or changing the Case outcome. **M21 is manual local intake: it does not read an inbox, verify delivery, classify GDPR compliance, or automatically complete a Case.**
+Milestone **M22 — Case Workflow Frontend Module** is implemented on the current development branch as a strategic frontend refactor. It does not add new GDPR authority or persistence semantics: the latest functional capability remains **M21 — Response Intake**, which can manually record controller correspondence against a submitted Case while it is awaiting a response, preserving the raw response locally without interpreting it or changing the Case outcome. **M21 is manual local intake: it does not read an inbox, verify delivery, classify GDPR compliance, or automatically complete a Case.**
+
+M22 reduces frontend change amplification before response review is added:
+
+- `ui/web/js/app.js` now owns application bootstrap, Identity presentation and Investigation/model presentation only;
+- `ui/web/js/case_workflow.js` is a focused local ES module for Target, rights, Case, request preview/approval, mail-client handoff, confirmed submission, deadline actions, timeline and response-intake presentation;
+- the module exposes only `setBackend(backend)` and `render(state)` to the outer frontend and keeps its transient UI state private;
+- Python remains the canonical owner of Case state, request contents, approvals, submission provenance, deadlines and persisted responses; no business rule or persistent state moved into JavaScript;
+- switching between Cases clears an unsaved response draft instead of carrying its text into another Case;
+- asynchronous response-list/detail callbacks are tied to the selected Case so a late callback cannot repaint another Case's response view;
+- a QWebEngine/QWebChannel smoke test loads the real local HTML and ES-module path in the same offscreen stack used by CI;
+- no framework, Node build step, backend API, schema migration, runtime dependency, network path or model authority is introduced.
 
 M8 introduced bounded OpenAI-compatible inference without tools or direct application authority. M9 added strict inert `CLAIM` and `RESEARCH_EVIDENCE` proposals. M10 added encrypted append-only outbound auditing. M11 added explicitly reviewed, atomic Claim acceptance. M12 connected bounded Investigation Evidence to inference and strict proposal parsing without mutation. M13 moved model analysis onto an owned Qt worker and wired configured inference into production. M14 added Python-owned opaque proposal identities and one-use Claim review. M15 added explicitly reviewed research-proposal execution while keeping outbound destinations under Python policy control. M16 added explicit controller-action jurisdiction and immutable deadline/calendar snapshots. M17 added deterministic local request composition for Articles 15, 17 and 21. M18 added encrypted append-only approved outbound payloads. M19 added reviewed default-mail-client handoff without claiming that opening a mail client proves transmission. M20 bound each confirmed submission to the exact immutable approved payload the user states was actually transmitted.
 
@@ -76,7 +87,7 @@ M16 remains the deadline foundation required for recorded submissions:
 
 `InvestigationService` remains the sole owner of Investigation/Evidence/Claim mutations. `CaseService` owns Case lifecycle, confirmed-submission semantics, deadline semantics and request-preview orchestration. `CaseRepository` owns atomic Case persistence and the immutable submission binding. `ResponseIntakeService` owns manual Case correspondence intake. `CaseResponseRepository` owns encrypted append-only response persistence. `RequestComposer` owns deterministic request wording. `RequestApprovalService` owns the transition from semantic review selection to a durable approved payload. `ApprovedOutboundRequestRepository` owns encrypted append-only approval persistence. `OutboundDeliveryService` owns the reviewed approved-ID-to-native-handoff use case. `DeliveryEventRepository` owns its append-only handoff event log. `HolidayCalendarProvider` owns jurisdiction-calendar lookup only. The model has no filesystem, browser, arbitrary networking, command execution, generic network primitive, jurisdiction authority, request-composition authority, request-approval authority, mail-client handoff authority, submission-confirmation authority or response-intake authority.
 
-Supported GDPR Case workflows are Article 15 access/provenance, Article 17 erasure and Article 21(2)-(3) direct-marketing objection. Verified complete multi-jurisdiction/local holiday calendars, independently verifiable email transport/delivery receipts, automated inbox intake, response-compliance review, monitoring and escalation remain future work.
+Supported GDPR Case workflows are Article 15 access/provenance, Article 17 erasure and Article 21(2)-(3) direct-marketing objection. Verified complete multi-jurisdiction/local holiday calendars, independently verifiable email transport/delivery receipts, automated inbox intake, structured response-compliance review, monitoring and escalation remain future work.
 
 ## Architecture
 
@@ -84,6 +95,7 @@ Supported GDPR Case workflows are Article 15 access/provenance, Article 17 erasu
 - PySide6 / Qt6
 - QWebEngineView with local HTML/CSS/vanilla JavaScript only
 - QWebChannel with a single `backend` object
+- local frontend modules remain buildless: `app.js` coordinates bootstrap/Identity/Investigation presentation and `case_workflow.js` hides the Case/Target workflow presentation behind a narrow `setBackend`/`render` interface
 - SQLite for operational persistence, append-only outbound audit, approved outbound payload records, delivery events, immutable submission bindings and encrypted Case-response records
 - Python owns canonical state and business logic
 - Sensitive personal/investigative data, audit destinations, approved outbound message contents and inbound response contents are encrypted before persistence
@@ -134,6 +146,8 @@ chmod +x install.sh
 .venv/bin/pip-audit -r requirements.txt -r requirements-dev.txt
 ```
 
+The pytest suite includes an offscreen QWebEngine/QWebChannel smoke test that exercises the local ES-module loading path used by the desktop application.
+
 ## Security posture
 
-The application is designed around local-first processing, explicit outbound-data control, encrypted sensitive persistence, append-only audit/correspondence records, immutable Artifact metadata, evidence provenance, deterministic parsing, SSRF-resistant bounded research, owned asynchronous execution, bounded inference/context, strict model-output validation, opaque one-use model proposal identities, explicit review gates and separation between LLM proposals and canonical application state. Request composition, approval, mail-client handoff, confirmed submission and response intake are Python-owned. M20 records which exact immutable payload the user confirms was transmitted while preserving M19 handoff as a distinct weaker event that never implies sending. M21 keeps inbound correspondence encrypted and outside bootstrap state, decrypting full content only on explicit local access and making no automatic legal/compliance conclusion from the response.
+The application is designed around local-first processing, explicit outbound-data control, encrypted sensitive persistence, append-only audit/correspondence records, immutable Artifact metadata, evidence provenance, deterministic parsing, SSRF-resistant bounded research, owned asynchronous execution, bounded inference/context, strict model-output validation, opaque one-use model proposal identities, explicit review gates and separation between LLM proposals and canonical application state. Request composition, approval, mail-client handoff, confirmed submission and response intake are Python-owned. M20 records which exact immutable payload the user confirms was transmitted while preserving M19 handoff as a distinct weaker event that never implies sending. M21 keeps inbound correspondence encrypted and outside bootstrap state, decrypting full content only on explicit local access and making no automatic legal/compliance conclusion from the response. M22 changes only frontend presentation boundaries and preserves those authority and data-ownership guarantees.
