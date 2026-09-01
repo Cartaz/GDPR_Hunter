@@ -30,6 +30,23 @@ const requestPreviewBodyNode = document.getElementById("request-preview-body");
 const approveRequestButton = document.getElementById("approve-request-button");
 const timelineTitleNode = document.getElementById("timeline-title");
 const timelineListNode = document.getElementById("timeline-list");
+const responsePanelTitleNode = document.getElementById("response-panel-title");
+const responsePanelEmptyNode = document.getElementById("response-panel-empty");
+const responsePanelNode = document.getElementById("response-panel");
+const responseForm = document.getElementById("response-form");
+const responseChannelNode = document.getElementById("response-channel");
+const responseReceivedOnNode = document.getElementById("response-received-on");
+const responseSenderNode = document.getElementById("response-sender");
+const responseSubjectNode = document.getElementById("response-subject");
+const responseBodyNode = document.getElementById("response-body");
+const responseListNode = document.getElementById("response-list");
+const responseDetailTitleNode = document.getElementById("response-detail-title");
+const responseDetailEmptyNode = document.getElementById("response-detail-empty");
+const responseDetailNode = document.getElementById("response-detail");
+const responseDetailMetaNode = document.getElementById("response-detail-meta");
+const responseDetailSenderNode = document.getElementById("response-detail-sender");
+const responseDetailSubjectNode = document.getElementById("response-detail-subject");
+const responseDetailBodyNode = document.getElementById("response-detail-body");
 const investigationForm = document.getElementById("investigation-form");
 const investigationTitleNode = document.getElementById("investigation-title");
 const investigationListNode = document.getElementById("investigation-list");
@@ -53,6 +70,7 @@ let currentState = null;
 let currentRequestPreviewContext = null;
 let selectedInvestigationId = null;
 let selectedInvestigationDetail = null;
+let selectedResponseCaseId = null;
 let researchBusy = false;
 let activeModelInvestigationId = null;
 const proposalViews = new Map();
@@ -496,6 +514,86 @@ function makeSubmissionAction(caseId, approvals) {
   return wrapper;
 }
 
+function clearResponseDetail() {
+  responseDetailTitleNode.textContent = "No response selected";
+  responseDetailEmptyNode.hidden = false;
+  responseDetailNode.hidden = true;
+  responseDetailMetaNode.textContent = "";
+  responseDetailSenderNode.value = "";
+  responseDetailSubjectNode.value = "";
+  responseDetailBodyNode.value = "";
+}
+
+function renderCaseResponseDetail(response) {
+  responseDetailTitleNode.textContent = `Response #${response.id}`;
+  responseDetailEmptyNode.hidden = true;
+  responseDetailNode.hidden = false;
+  responseDetailMetaNode.textContent = `${response.channel} · received ${response.receivedOn} · recorded ${response.recordedAt}`;
+  responseDetailSenderNode.value = response.sender ?? "";
+  responseDetailSubjectNode.value = response.subject ?? "";
+  responseDetailBodyNode.value = response.body;
+}
+
+function openCaseResponse(responseId) {
+  if (!backend) return;
+  backend.getCaseResponse(responseId, (response) => {
+    if (response?.error) {
+      setStatus(response.error.message, true);
+      return;
+    }
+    renderCaseResponseDetail(response);
+  });
+}
+
+function renderCaseResponseSummaries(caseId, summaries) {
+  clearNode(responseListNode);
+  if (!summaries.length) {
+    const empty = document.createElement("p");
+    empty.className = "muted empty-state";
+    empty.textContent = "No controller responses recorded for this Case.";
+    responseListNode.appendChild(empty);
+    return;
+  }
+  for (const summary of summaries) {
+    const row = document.createElement("div");
+    row.className = "record";
+    const info = document.createElement("div");
+    const title = document.createElement("strong");
+    title.textContent = `Response #${summary.id} · ${summary.channel}`;
+    const detail = document.createElement("small");
+    detail.textContent = `Received ${summary.receivedOn} · recorded ${summary.recordedAt}`;
+    info.append(title, detail);
+    row.append(info, makeButton("Open", () => openCaseResponse(summary.id)));
+    responseListNode.appendChild(row);
+  }
+}
+
+function loadCaseResponses(caseId) {
+  if (!backend) return;
+  const caseItem = currentState?.cases?.find((item) => item.id === caseId);
+  if (!caseItem || !caseItem.receivedOn) {
+    selectedResponseCaseId = null;
+    responsePanelTitleNode.textContent = "Select a submitted case";
+    responsePanelEmptyNode.hidden = false;
+    responsePanelNode.hidden = true;
+    clearResponseDetail();
+    return;
+  }
+  selectedResponseCaseId = caseId;
+  responsePanelTitleNode.textContent = `Case #${caseId} · ${targetName(caseItem.targetId)}`;
+  responsePanelEmptyNode.hidden = true;
+  responsePanelNode.hidden = false;
+  responseForm.hidden = caseItem.status !== "AWAITING_RESPONSE";
+  if (!responseReceivedOnNode.value) responseReceivedOnNode.value = localDateString();
+  backend.listCaseResponses(caseId, (response) => {
+    if (response?.error) {
+      setStatus(response.error.message, true);
+      return;
+    }
+    renderCaseResponseSummaries(caseId, response);
+  });
+}
+
 function previewCaseRequest(caseItem) {
   if (!backend || caseItem.right === "UNSPECIFIED") return;
   const erasureGround = caseItem.right === "ERASURE" ? caseErasureGroundNode.value : "";
@@ -630,6 +728,9 @@ function renderCases(cases) {
         makeButton("Open approved payload", () => handoffApprovedRequest(approval.id)),
       );
     }
+    if (caseItem.receivedOn) {
+      actions.appendChild(makeButton("Responses", () => loadCaseResponses(caseItem.id)));
+    }
     actions.appendChild(makeButton("Timeline", () => loadTimeline(caseItem.id)));
     if (caseItem.status === "DRAFT" && caseItem.right !== "UNSPECIFIED") {
       if (approvals.length) actions.appendChild(makeSubmissionAction(caseItem.id, approvals));
@@ -648,7 +749,7 @@ function renderCases(cases) {
 
 function renderState(state) {
   currentState = state;
-  milestoneNode.textContent = state.milestone ?? "M20";
+  milestoneNode.textContent = state.milestone ?? "M21";
   investigationCountNode.textContent = String(state.investigations?.length ?? 0);
   targetCountNode.textContent = String(state.targets?.length ?? 0);
   caseCountNode.textContent = String(state.cases?.length ?? 0);
@@ -662,6 +763,7 @@ function renderState(state) {
   renderTargets(state.targets ?? []);
   renderCases(state.cases ?? []);
   if (selectedInvestigationId) loadInvestigation(selectedInvestigationId);
+  if (selectedResponseCaseId) loadCaseResponses(selectedResponseCaseId);
 }
 
 function handleMutation(response, successMessage) {
@@ -851,6 +953,34 @@ targetForm.addEventListener("submit", (event) => {
     handleMutation(response, "Target added locally.");
     if (response?.ok) targetForm.reset();
   });
+});
+
+responseForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  if (!backend || !selectedResponseCaseId) return;
+  const confirmed = window.confirm(
+    "Record this controller response exactly as entered? Sensitive response content will be encrypted locally. This does not classify compliance, alter the deadline, or complete the Case.",
+  );
+  if (!confirmed) return;
+  backend.recordCaseResponse(
+    selectedResponseCaseId,
+    responseChannelNode.value,
+    responseReceivedOnNode.value,
+    responseSenderNode.value,
+    responseSubjectNode.value,
+    responseBodyNode.value,
+    confirmed,
+    (response) => {
+      handleMutation(response, "Controller response encrypted and recorded locally.");
+      if (response?.ok) {
+        responseForm.reset();
+        responseChannelNode.value = "EMAIL";
+        responseReceivedOnNode.value = localDateString();
+        clearResponseDetail();
+        loadCaseResponses(selectedResponseCaseId);
+      }
+    },
+  );
 });
 
 investigationForm.addEventListener("submit", (event) => {

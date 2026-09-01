@@ -156,6 +156,52 @@
 
       <section class="content-grid lower-grid">
         <article class="card">
+          <p class="eyebrow">INBOUND CORRESPONDENCE</p>
+          <h2 id="response-panel-title">Select a submitted case</h2>
+          <div id="response-panel-empty" class="muted">Use Responses on a submitted Case to inspect its correspondence.</div>
+          <div id="response-panel" hidden>
+            <form id="response-form" class="stack-form">
+              <label for="response-channel">Channel</label>
+              <select id="response-channel">
+                <option value="EMAIL">Email</option>
+                <option value="POSTAL_MAIL">Postal mail</option>
+                <option value="WEB_PORTAL">Web portal</option>
+                <option value="PHONE">Phone / call notes</option>
+                <option value="OTHER">Other</option>
+              </select>
+              <label for="response-received-on">Received on</label>
+              <input id="response-received-on" type="date" required>
+              <label for="response-sender">Sender</label>
+              <input id="response-sender" autocomplete="off" placeholder="Optional">
+              <label for="response-subject">Subject</label>
+              <input id="response-subject" autocomplete="off" placeholder="Optional">
+              <label for="response-body">Response body / call notes</label>
+              <textarea id="response-body" rows="10" required></textarea>
+              <button type="submit">Record encrypted response</button>
+              <p class="muted">The response is preserved as entered. Recording it does not classify compliance, change the deadline, or complete the Case.</p>
+            </form>
+            <div id="response-list" class="record-list" aria-live="polite"></div>
+          </div>
+        </article>
+
+        <article class="card">
+          <p class="eyebrow">RESPONSE DETAIL</p>
+          <h2 id="response-detail-title">No response selected</h2>
+          <div id="response-detail-empty" class="muted">Choose a recorded response to decrypt and view it locally.</div>
+          <div id="response-detail" class="stack-form" hidden>
+            <p id="response-detail-meta" class="muted"></p>
+            <label for="response-detail-sender">Sender</label>
+            <input id="response-detail-sender" readonly>
+            <label for="response-detail-subject">Subject</label>
+            <input id="response-detail-subject" readonly>
+            <label for="response-detail-body">Body / notes</label>
+            <textarea id="response-detail-body" rows="14" readonly></textarea>
+          </div>
+        </article>
+      </section>
+
+      <section class="content-grid lower-grid">
+        <article class="card">
           <p class="eyebrow">IDENTITY VAULT</p>
           <h2>Local profile</h2>
           <form id="name-form" class="form-row">
