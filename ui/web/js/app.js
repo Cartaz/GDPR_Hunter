@@ -471,6 +471,31 @@ function makeDateAction(label, action) {
   return wrapper;
 }
 
+function makeSubmissionAction(caseId, approvals) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "date-action submission-action";
+
+  const selector = document.createElement("select");
+  selector.setAttribute("aria-label", `Approved payload for Case #${caseId}`);
+  for (const approval of approvals) {
+    const option = document.createElement("option");
+    option.value = String(approval.id);
+    option.textContent = `Payload #${approval.id} · ${approval.approvedAt}`;
+    selector.appendChild(option);
+  }
+
+  const input = document.createElement("input");
+  input.type = "date";
+  input.value = localDateString();
+  input.setAttribute("aria-label", `Controller receipt date for Case #${caseId}`);
+
+  const button = makeButton("Confirm sent payload", () => {
+    submitCase(caseId, Number(selector.value), input.value);
+  });
+  wrapper.append(selector, input, button);
+  return wrapper;
+}
+
 function previewCaseRequest(caseItem) {
   if (!backend || caseItem.right === "UNSPECIFIED") return;
   const erasureGround = caseItem.right === "ERASURE" ? caseErasureGroundNode.value : "";
@@ -521,7 +546,7 @@ function handoffApprovedRequest(approvedRequestId) {
   if (!approved) return;
   backend.handoffApprovedRequest(approvedRequestId, approved, (response) => {
     if (response?.ok && response.result?.accepted) {
-      setStatus(`Approved payload #${approvedRequestId} opened in the system mail client. Record submission only after you actually send it.`);
+      setStatus(`Approved payload #${approvedRequestId} opened in the system mail client. Confirm submission only after you actually send it.`);
     } else if (response?.ok) {
       setStatus("The operating system did not accept the mail-client handoff. Nothing was sent.", true);
     } else if (response?.error?.message) {
@@ -563,6 +588,14 @@ function renderCases(cases) {
         info.appendChild(deliveryDetail);
       }
     }
+    const submissionBinding = (currentState?.submissionBindings ?? []).find(
+      (item) => item.caseId === caseItem.id,
+    );
+    if (submissionBinding) {
+      const submittedDetail = document.createElement("small");
+      submittedDetail.textContent = `Confirmed submitted payload #${submissionBinding.approvedRequestId} · bound ${submissionBinding.confirmedAt}`;
+      info.appendChild(submittedDetail);
+    }
     if (caseItem.effectiveDueOn) {
       const due = document.createElement("small");
       due.textContent = `Tracked deadline: ${caseItem.effectiveDueOn}${caseItem.extensionNotifiedOn ? " · extension recorded" : ""}`;
@@ -582,7 +615,9 @@ function renderCases(cases) {
       }
     } else if (caseItem.receivedOn) {
       const legacy = document.createElement("small");
-      legacy.textContent = "Legacy deadline · no jurisdiction/calendar snapshot";
+      legacy.textContent = submissionBinding
+        ? "Legacy deadline · no jurisdiction/calendar snapshot"
+        : "Legacy submission · exact approved payload was not historically recorded";
       info.appendChild(legacy);
     }
     const actions = document.createElement("div");
@@ -597,7 +632,7 @@ function renderCases(cases) {
     }
     actions.appendChild(makeButton("Timeline", () => loadTimeline(caseItem.id)));
     if (caseItem.status === "DRAFT" && caseItem.right !== "UNSPECIFIED") {
-      actions.appendChild(makeDateAction("Record submission", (value) => submitCase(caseItem.id, value)));
+      if (approvals.length) actions.appendChild(makeSubmissionAction(caseItem.id, approvals));
       actions.appendChild(makeButton("Cancel", () => transitionCase(caseItem.id, "CANCELLED")));
     } else if (caseItem.status === "AWAITING_RESPONSE") {
       if (!caseItem.extensionNotifiedOn) {
@@ -613,7 +648,7 @@ function renderCases(cases) {
 
 function renderState(state) {
   currentState = state;
-  milestoneNode.textContent = state.milestone ?? "M19";
+  milestoneNode.textContent = state.milestone ?? "M20";
   investigationCountNode.textContent = String(state.investigations?.length ?? 0);
   targetCountNode.textContent = String(state.targets?.length ?? 0);
   caseCountNode.textContent = String(state.cases?.length ?? 0);
@@ -639,18 +674,32 @@ function createCase(targetId) {
   backend.createCase(targetId, caseRightNode.value, (response) => handleMutation(response, "Draft GDPR case created locally."));
 }
 
-function submitCase(caseId, receivedOn) {
-  if (!backend || !receivedOn) return;
+function submitCase(caseId, approvedRequestId, receivedOn) {
+  if (!backend || !receivedOn || !approvedRequestId) return;
   const jurisdiction = caseJurisdictionNode.value.trim().toUpperCase();
   if (!jurisdiction) {
-    setStatus("Enter the controller action jurisdiction before recording submission.", true);
+    setStatus("Enter the controller action jurisdiction before confirming submission.", true);
     caseJurisdictionNode.focus();
     return;
   }
-  backend.submitCase(caseId, receivedOn, jurisdiction, (response) => {
-    handleMutation(response, "Submission recorded with an immutable jurisdiction/deadline snapshot.");
-    if (response?.ok) loadTimeline(caseId);
-  });
+  const confirmed = window.confirm(
+    `Confirm that approved payload #${approvedRequestId} was actually transmitted and that ${receivedOn} is the controller receipt date to use for the GDPR deadline snapshot?`,
+  );
+  if (!confirmed) return;
+  backend.submitCase(
+    caseId,
+    approvedRequestId,
+    receivedOn,
+    jurisdiction,
+    confirmed,
+    (response) => {
+      handleMutation(
+        response,
+        `Payload #${approvedRequestId} bound to the submission with an immutable jurisdiction/deadline snapshot.`,
+      );
+      if (response?.ok) loadTimeline(caseId);
+    },
+  );
 }
 
 function recordExtension(caseId, notifiedOn) {
@@ -722,7 +771,7 @@ function connectBackend() {
     backend.researchFailed.connect((investigationId, _artifactId, _code, message) => {
       researchBusy = false;
       setStatus(message, true);
-      if (selectedInvestigationId === investigationId) loadInvestigation(investigationId);
+      if (selectedInvestigationId === investigationId) loadInvestigation(selectedInvestigationId);
     });
     backend.modelResearchStarted.connect((investigationId, evidenceId) => {
       researchBusy = true;
