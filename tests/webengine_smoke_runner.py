@@ -4,7 +4,9 @@ import sys
 import time
 from pathlib import Path
 
-from PySide6.QtCore import QEventLoop, QTimer
+from PySide6.QtCore import QEventLoop, QTimer, QUrl
+from PySide6.QtWebChannel import QWebChannel
+from PySide6.QtWebEngineCore import QWebEngineSettings
 from PySide6.QtWidgets import QApplication
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -13,7 +15,7 @@ if str(ROOT) not in sys.path:
 
 from ui.bridge import Bridge
 from ui.research_runner import ResearchRunner
-from ui.window import MainWindow
+from ui.window import LocalOnlyPage
 
 
 class SmokeController:
@@ -37,7 +39,7 @@ class SmokeController:
         }
 
 
-def wait_for_load(window: MainWindow, timeout_ms: int = 10_000) -> bool:
+def wait_for_load(page: LocalOnlyPage, timeout_ms: int = 10_000) -> bool:
     loop = QEventLoop()
     loaded = {"ok": False}
 
@@ -45,14 +47,14 @@ def wait_for_load(window: MainWindow, timeout_ms: int = 10_000) -> bool:
         loaded["ok"] = ok
         loop.quit()
 
-    window._view.loadFinished.connect(finish)
+    page.loadFinished.connect(finish)
     QTimer.singleShot(timeout_ms, loop.quit)
     loop.exec()
     return loaded["ok"]
 
 
 def wait_for_javascript_value(
-    window: MainWindow,
+    page: LocalOnlyPage,
     expression: str,
     expected: object,
     timeout_seconds: float = 5.0,
@@ -72,7 +74,7 @@ def wait_for_javascript_value(
         QTimer.singleShot(50, check)
 
     def check() -> None:
-        window._page.runJavaScript(expression, evaluate)
+        page.runJavaScript(expression, evaluate)
 
     check()
     QTimer.singleShot(int(timeout_seconds * 1000) + 100, loop.quit)
@@ -84,21 +86,34 @@ def main() -> int:
     app = QApplication([])
     controller = SmokeController()
     bridge = Bridge(controller, ResearchRunner(controller))  # type: ignore[arg-type]
-    window = MainWindow(bridge, ROOT / "ui" / "web", 1200, 800)
+    web_root = (ROOT / "ui" / "web").resolve()
+    page = LocalOnlyPage(web_root)
+    page.settings().setAttribute(
+        QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls,
+        False,
+    )
+    page.settings().setAttribute(
+        QWebEngineSettings.WebAttribute.LocalContentCanAccessFileUrls,
+        True,
+    )
+    channel = QWebChannel(page)
+    channel.registerObject("backend", bridge)
+    page.setWebChannel(channel)
+    page.setUrl(QUrl.fromLocalFile(str(web_root / "index.html")))
 
     try:
-        if not wait_for_load(window):
-            print("WebEngine load did not finish successfully", file=sys.stderr)
+        if not wait_for_load(page):
+            print("WebEngine page load did not finish successfully", file=sys.stderr)
             return 1
         if not wait_for_javascript_value(
-            window,
+            page,
             'document.getElementById("milestone").textContent',
             "M22 module smoke",
         ):
             print("Local ES module did not complete QWebChannel bootstrap", file=sys.stderr)
             return 2
         if not wait_for_javascript_value(
-            window,
+            page,
             'document.getElementById("case-list") !== null',
             True,
         ):
@@ -106,8 +121,8 @@ def main() -> int:
             return 3
         return 0
     finally:
-        window.close()
-        window.deleteLater()
+        page.setWebChannel(None)
+        page.deleteLater()
         app.processEvents()
 
 
