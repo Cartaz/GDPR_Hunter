@@ -11,9 +11,9 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from ui.bridge import Bridge  # noqa: E402
-from ui.research_runner import ResearchRunner  # noqa: E402
-from ui.window import MainWindow  # noqa: E402
+from ui.bridge import Bridge
+from ui.research_runner import ResearchRunner
+from ui.window import MainWindow
 
 
 class SmokeController:
