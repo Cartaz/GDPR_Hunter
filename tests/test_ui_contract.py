@@ -7,6 +7,14 @@ from PySide6.QtCore import QUrl
 from ui.window import LocalOnlyPage, MainWindow, is_allowed_local_url
 
 ROOT = Path(__file__).resolve().parents[1]
+JS_ROOT = ROOT / "ui" / "web" / "js"
+
+
+def frontend_javascript() -> str:
+    return "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in sorted(JS_ROOT.glob("*.js"))
+    )
 
 
 def test_ui_modules_import():
@@ -25,13 +33,28 @@ def test_local_html_has_no_remote_assets():
 
 
 def test_frontend_does_not_render_backend_data_with_inner_html():
-    javascript = (ROOT / "ui" / "web" / "js" / "app.js").read_text(encoding="utf-8")
+    assert "innerHTML" not in frontend_javascript()
 
-    assert "innerHTML" not in javascript
+
+def test_case_workflow_is_owned_by_focused_frontend_module():
+    app = (JS_ROOT / "app.js").read_text(encoding="utf-8")
+    case_workflow = (JS_ROOT / "case_workflow.js").read_text(encoding="utf-8")
+
+    assert 'import { createCaseWorkflow } from "./case_workflow.js";' in app
+    assert "caseWorkflow.render(state)" in app
+    assert "caseWorkflow.setBackend(backend)" in app
+    assert 'document.getElementById("case-list")' not in app
+    assert 'document.getElementById("response-form")' not in app
+    assert "export function createCaseWorkflow" in case_workflow
+    assert "function renderCases" in case_workflow
+    assert "function loadCaseResponses" in case_workflow
+    assert "selectedResponseCaseId !== requestedCaseId" in case_workflow
+    assert "caseChanged" in case_workflow
+    assert "resetResponseDraft()" in case_workflow
 
 
 def test_frontend_cannot_assign_privileged_investigation_provenance():
-    javascript = (ROOT / "ui" / "web" / "js" / "app.js").read_text(encoding="utf-8")
+    javascript = frontend_javascript()
     bridge = (ROOT / "ui" / "bridge.py").read_text(encoding="utf-8")
 
     assert "DETERMINISTIC_ANALYSIS" not in javascript
@@ -44,7 +67,7 @@ def test_frontend_cannot_assign_privileged_investigation_provenance():
 
 
 def test_model_claim_review_uses_opaque_token_not_frontend_provenance_payload():
-    javascript = (ROOT / "ui" / "web" / "js" / "app.js").read_text(encoding="utf-8")
+    javascript = frontend_javascript()
     bridge = (ROOT / "ui" / "bridge.py").read_text(encoding="utf-8")
 
     assert "backend.acceptModelClaim(token, approved" in javascript
@@ -59,7 +82,7 @@ def test_model_claim_review_uses_opaque_token_not_frontend_provenance_payload():
 
 
 def test_reviewed_model_research_uses_only_opaque_token_and_approval_from_frontend():
-    javascript = (ROOT / "ui" / "web" / "js" / "app.js").read_text(encoding="utf-8")
+    javascript = frontend_javascript()
     bridge = (ROOT / "ui" / "bridge.py").read_text(encoding="utf-8")
 
     assert "backend.executeModelResearchProposal(token, approved" in javascript
@@ -77,7 +100,7 @@ def test_reviewed_model_research_uses_only_opaque_token_and_approval_from_fronte
 
 def test_case_submission_requires_explicit_payload_jurisdiction_and_confirmation():
     html = (ROOT / "ui" / "web" / "index.html").read_text(encoding="utf-8")
-    javascript = (ROOT / "ui" / "web" / "js" / "app.js").read_text(encoding="utf-8")
+    javascript = frontend_javascript()
     bridge = (ROOT / "ui" / "bridge.py").read_text(encoding="utf-8")
 
     assert 'id="case-jurisdiction"' in html
@@ -103,7 +126,7 @@ def test_case_submission_requires_explicit_payload_jurisdiction_and_confirmation
 
 def test_request_preview_is_read_only_python_composed_and_identifier_opt_in():
     html = (ROOT / "ui" / "web" / "index.html").read_text(encoding="utf-8")
-    javascript = (ROOT / "ui" / "web" / "js" / "app.js").read_text(encoding="utf-8")
+    javascript = frontend_javascript()
     bridge = (ROOT / "ui" / "bridge.py").read_text(encoding="utf-8")
 
     assert 'id="request-preview-body"' in html
@@ -123,7 +146,7 @@ def test_request_preview_is_read_only_python_composed_and_identifier_opt_in():
 
 def test_request_approval_cannot_supply_or_override_outbound_payload_from_javascript():
     html = (ROOT / "ui" / "web" / "index.html").read_text(encoding="utf-8")
-    javascript = (ROOT / "ui" / "web" / "js" / "app.js").read_text(encoding="utf-8")
+    javascript = frontend_javascript()
     bridge = (ROOT / "ui" / "bridge.py").read_text(encoding="utf-8")
 
     assert 'id="approve-request-button"' in html
@@ -151,7 +174,7 @@ def test_request_approval_cannot_supply_or_override_outbound_payload_from_javasc
 
 
 def test_research_bridge_exposes_semantic_async_action_not_network_primitive():
-    javascript = (ROOT / "ui" / "web" / "js" / "app.js").read_text(encoding="utf-8")
+    javascript = frontend_javascript()
     bridge = (ROOT / "ui" / "bridge.py").read_text(encoding="utf-8")
     runner = (ROOT / "ui" / "research_runner.py").read_text(encoding="utf-8")
 
