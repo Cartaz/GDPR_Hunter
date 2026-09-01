@@ -8,6 +8,7 @@ from core.application.investigation_service import InvestigationService
 from core.application.outbound_delivery_service import OutboundDeliveryService
 from core.application.request_approval_service import RequestApprovalService
 from core.application.research_service import CancellationCheck
+from core.application.response_intake_service import ResponseIntakeService
 from core.application.target_service import TargetService
 from core.domain.case import Case, CaseEvent, CaseStatus
 from core.domain.delivery import DeliveryAttemptResult, DeliveryEvent
@@ -27,6 +28,7 @@ from core.domain.outbound_request import (
     ApprovedOutboundRequest,
     ApprovedOutboundRequestSummary,
 )
+from core.domain.response import CaseResponse, CaseResponseSummary, ResponseChannel
 from core.domain.rights import (
     CaseRight,
     ErasureGround,
@@ -48,6 +50,7 @@ class AppController:
         investigation_service: InvestigationService,
         request_approval_service: RequestApprovalService,
         outbound_delivery_service: OutboundDeliveryService,
+        response_intake_service: ResponseIntakeService,
     ) -> None:
         self._identity_service = identity_service
         self._target_service = target_service
@@ -55,6 +58,7 @@ class AppController:
         self._investigation_service = investigation_service
         self._request_approval_service = request_approval_service
         self._outbound_delivery_service = outbound_delivery_service
+        self._response_intake_service = response_intake_service
 
     def get_bootstrap_state(self) -> dict[str, object]:
         identity = self._identity_service.get_identity()
@@ -83,7 +87,7 @@ class AppController:
                 self._submission_binding_dto(item) for item in submission_bindings
             ],
             "investigations": [self._investigation_dto(item) for item in investigations],
-            "milestone": "M20 — Confirmed Submission Binding",
+            "milestone": "M21 — Response Intake",
             "features": {
                 "investigatorCore": True,
                 "artifactAnalysis": True,
@@ -101,6 +105,7 @@ class AppController:
                 "requestApproval": True,
                 "mailClientHandoff": True,
                 "confirmedSubmission": True,
+                "responseIntake": True,
             },
         }
 
@@ -211,6 +216,41 @@ class AppController:
 
     def get_case_timeline(self, case_id: int) -> list[dict[str, object]]:
         return [self._event_dto(event) for event in self._case_service.list_timeline(case_id)]
+
+    def record_case_response(
+        self,
+        case_id: int,
+        channel: str,
+        received_on: str,
+        sender: str | None,
+        subject: str | None,
+        body: str,
+        *,
+        confirmed_by_user: bool,
+    ) -> dict[str, object]:
+        try:
+            parsed_channel = ResponseChannel(channel)
+        except ValueError as exc:
+            raise ValueError("Unsupported response channel") from exc
+        response = self._response_intake_service.record_response(
+            case_id,
+            parsed_channel,
+            self._parse_date(received_on),
+            sender,
+            subject,
+            body,
+            confirmed_by_user=confirmed_by_user,
+        )
+        return self._case_response_dto(response)
+
+    def list_case_responses(self, case_id: int) -> list[dict[str, object]]:
+        return [
+            self._case_response_summary_dto(item)
+            for item in self._response_intake_service.list_case_responses(case_id)
+        ]
+
+    def get_case_response(self, response_id: int) -> dict[str, object]:
+        return self._case_response_dto(self._response_intake_service.get_response(response_id))
 
     def create_investigation(self, title: str) -> dict[str, object]:
         return self._investigation_dto(self._investigation_service.create_investigation(title))
@@ -444,6 +484,29 @@ class AppController:
             "caseId": binding.case_id,
             "approvedRequestId": binding.approved_request_id,
             "confirmedAt": binding.confirmed_at,
+        }
+
+    @staticmethod
+    def _case_response_summary_dto(response: CaseResponseSummary) -> dict[str, object]:
+        return {
+            "id": response.id,
+            "caseId": response.case_id,
+            "channel": response.channel.value,
+            "receivedOn": response.received_on.isoformat(),
+            "recordedAt": response.recorded_at,
+        }
+
+    @staticmethod
+    def _case_response_dto(response: CaseResponse) -> dict[str, object]:
+        return {
+            "id": response.id,
+            "caseId": response.case_id,
+            "channel": response.channel.value,
+            "receivedOn": response.received_on.isoformat(),
+            "sender": response.sender,
+            "subject": response.subject,
+            "body": response.body,
+            "recordedAt": response.recorded_at,
         }
 
     @staticmethod
