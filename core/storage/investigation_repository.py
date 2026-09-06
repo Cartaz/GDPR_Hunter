@@ -11,11 +11,14 @@ from core.domain.investigation import (
     ClaimProvenance,
     ClaimStatus,
     Evidence,
+    EvidenceCandidate,
     EvidenceKind,
     EvidenceProvenance,
     EvidenceRelation,
     Investigation,
     InvestigationStatus,
+    validate_claim_support,
+    validate_claim_transition,
 )
 from core.storage.database import Database
 from core.storage.sensitive_store import SensitiveStore
@@ -23,6 +26,12 @@ from core.storage.sensitive_store import SensitiveStore
 
 class InvestigationRepository:
     """Persist investigation aggregates while encrypting sensitive fields."""
+
+    _CLAIM_SELECT = """
+        SELECT c.*, EXISTS (
+            SELECT 1 FROM claim_reviews r WHERE r.claim_id = c.id AND r.target_status = c.status
+        ) AS human_reviewed FROM claims c
+    """
 
     def __init__(self, database: Database, sensitive_store: SensitiveStore) -> None:
         self._database = database
@@ -96,24 +105,36 @@ class InvestigationRepository:
         payload: bytes,
         role: ArtifactRole,
     ) -> Artifact:
-        content_hash_enc = self._sensitive_store.encrypt_text(hashlib.sha256(payload).hexdigest())
         with self._database.transaction() as connection:
-            cursor = connection.execute(
-                """
-                INSERT INTO artifacts(storage_key, kind, media_type, byte_size, content_hash_enc, created_at)
-                VALUES (?, ?, ?, ?, ?, datetime('now'))
-                """,
-                (storage_key, kind.value, media_type, len(payload), content_hash_enc),
-            )
-            artifact_id = int(cursor.lastrowid)
-            connection.execute(
-                """
-                INSERT INTO investigation_artifacts(investigation_id, artifact_id, role, attached_at)
-                VALUES (?, ?, ?, datetime('now'))
-                """,
-                (investigation_id, artifact_id, role.value),
-            )
-            row = connection.execute("SELECT * FROM artifacts WHERE id = ?", (artifact_id,)).fetchone()
+            return self._add_artifact_metadata(connection, investigation_id, storage_key, kind, media_type, payload, role)
+
+    def _add_artifact_metadata(
+        self,
+        connection: sqlite3.Connection,
+        investigation_id: int,
+        storage_key: str,
+        kind: ArtifactKind,
+        media_type: str,
+        payload: bytes,
+        role: ArtifactRole,
+    ) -> Artifact:
+        content_hash_enc = self._sensitive_store.encrypt_text(hashlib.sha256(payload).hexdigest())
+        cursor = connection.execute(
+            """
+            INSERT INTO artifacts(storage_key, kind, media_type, byte_size, content_hash_enc, created_at)
+            VALUES (?, ?, ?, ?, ?, datetime('now'))
+            """,
+            (storage_key, kind.value, media_type, len(payload), content_hash_enc),
+        )
+        artifact_id = int(cursor.lastrowid)
+        connection.execute(
+            """
+            INSERT INTO investigation_artifacts(investigation_id, artifact_id, role, attached_at)
+            VALUES (?, ?, ?, datetime('now'))
+            """,
+            (investigation_id, artifact_id, role.value),
+        )
+        row = connection.execute("SELECT * FROM artifacts WHERE id = ?", (artifact_id,)).fetchone()
         if row is None:
             raise RuntimeError("Created artifact metadata could not be reloaded")
         return self._artifact_from_row(row)
@@ -132,8 +153,73 @@ class InvestigationRepository:
             ).fetchall()
         return [self._artifact_from_row(row) for row in rows]
 
+    def add_research_document(
+        self,
+        investigation_id: int,
+        storage_key: str,
+        media_type: str,
+        payload: bytes,
+        findings: tuple[EvidenceCandidate, ...],
+        completion: EvidenceCandidate,
+    ) -> list[Evidence]:
+        """Commit one complete fetched document, or nothing (including on retry)."""
+        with self._database.transaction() as connection:
+            rows = connection.execute(
+                "SELECT * FROM evidence WHERE investigation_id = ? AND provenance = ?",
+                (investigation_id, completion.provenance.value),
+            ).fetchall()
+            for row in rows:
+                evidence = self._evidence_from_row(row)
+                if (evidence.value, evidence.source_locator) == (completion.value, completion.source_locator):
+                    return []
+            artifact = self._add_artifact_metadata(
+                connection, investigation_id, storage_key, ArtifactKind.TEXT,
+                media_type, payload, ArtifactRole.REFERENCE,
+            )
+            return self._add_candidates(connection, investigation_id, artifact.id, (*findings, completion))
+
+    def add_analysis_evidence(
+        self, investigation_id: int, artifact_id: int, findings: tuple[EvidenceCandidate, ...],
+    ) -> list[Evidence]:
+        """Deduplicate and persist a bounded analysis under the same write lock."""
+        with self._database.transaction() as connection:
+            rows = connection.execute(
+                "SELECT * FROM evidence WHERE investigation_id = ? AND artifact_id = ?",
+                (investigation_id, artifact_id),
+            ).fetchall()
+            existing = {
+                (item.kind, item.provenance, item.value, item.source_locator)
+                for item in (self._evidence_from_row(row) for row in rows)
+            }
+            missing = tuple(item for item in findings if (
+                item.kind, item.provenance, item.value, item.source_locator
+            ) not in existing)
+            return self._add_candidates(connection, investigation_id, artifact_id, missing)
+
+    def _add_candidates(
+        self, connection: sqlite3.Connection, investigation_id: int,
+        artifact_id: int | None, findings: tuple[EvidenceCandidate, ...],
+    ) -> list[Evidence]:
+        return [self._add_evidence(
+            connection, investigation_id, artifact_id,
+            item.kind, item.provenance, item.value, item.source_locator,
+        ) for item in findings]
+
     def add_evidence(
         self,
+        investigation_id: int,
+        artifact_id: int | None,
+        kind: EvidenceKind,
+        provenance: EvidenceProvenance,
+        value: str | None,
+        source_locator: str | None,
+    ) -> Evidence:
+        with self._database.transaction() as connection:
+            return self._add_evidence(connection, investigation_id, artifact_id, kind, provenance, value, source_locator)
+
+    def _add_evidence(
+        self,
+        connection: sqlite3.Connection,
         investigation_id: int,
         artifact_id: int | None,
         kind: EvidenceKind,
@@ -145,35 +231,34 @@ class InvestigationRepository:
         locator_enc = (
             self._sensitive_store.encrypt_text(source_locator) if source_locator is not None else None
         )
-        with self._database.transaction() as connection:
-            if artifact_id is not None:
-                attached = connection.execute(
-                    """
-                    SELECT 1 FROM investigation_artifacts
-                    WHERE investigation_id = ? AND artifact_id = ?
-                    """,
-                    (investigation_id, artifact_id),
-                ).fetchone()
-                if attached is None:
-                    raise ValueError("Evidence artifact is not attached to this investigation")
-            cursor = connection.execute(
+        if artifact_id is not None:
+            attached = connection.execute(
                 """
-                INSERT INTO evidence(
-                    investigation_id, artifact_id, kind, provenance, value_enc, source_locator_enc, created_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+                SELECT 1 FROM investigation_artifacts
+                WHERE investigation_id = ? AND artifact_id = ?
                 """,
-                (
-                    investigation_id,
-                    artifact_id,
-                    kind.value,
-                    provenance.value,
-                    value_enc,
-                    locator_enc,
-                ),
+                (investigation_id, artifact_id),
+            ).fetchone()
+            if attached is None:
+                raise ValueError("Evidence artifact is not attached to this investigation")
+        cursor = connection.execute(
+            """
+            INSERT INTO evidence(
+                investigation_id, artifact_id, kind, provenance, value_enc, source_locator_enc, created_at
             )
-            evidence_id = int(cursor.lastrowid)
-            row = connection.execute("SELECT * FROM evidence WHERE id = ?", (evidence_id,)).fetchone()
+            VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+            """,
+            (
+                investigation_id,
+                artifact_id,
+                kind.value,
+                provenance.value,
+                value_enc,
+                locator_enc,
+            ),
+        )
+        evidence_id = int(cursor.lastrowid)
+        row = connection.execute("SELECT * FROM evidence WHERE id = ?", (evidence_id,)).fetchone()
         if row is None:
             raise RuntimeError("Created evidence could not be reloaded")
         return self._evidence_from_row(row)
@@ -211,7 +296,7 @@ class InvestigationRepository:
                 ),
             )
             claim_id = int(cursor.lastrowid)
-            row = connection.execute("SELECT * FROM claims WHERE id = ?", (claim_id,)).fetchone()
+            row = connection.execute(self._CLAIM_SELECT + " WHERE id = ?", (claim_id,)).fetchone()
         if row is None:
             raise RuntimeError("Created claim could not be reloaded")
         return self._claim_from_row(row)
@@ -262,20 +347,20 @@ class InvestigationRepository:
                     for evidence_id in evidence_ids
                 ],
             )
-            row = connection.execute("SELECT * FROM claims WHERE id = ?", (claim_id,)).fetchone()
+            row = connection.execute(self._CLAIM_SELECT + " WHERE id = ?", (claim_id,)).fetchone()
         if row is None:
             raise RuntimeError("Created model claim could not be reloaded")
         return self._claim_from_row(row)
 
     def get_claim(self, claim_id: int) -> Claim | None:
         with self._database.connection_scope() as connection:
-            row = connection.execute("SELECT * FROM claims WHERE id = ?", (claim_id,)).fetchone()
+            row = connection.execute(self._CLAIM_SELECT + " WHERE id = ?", (claim_id,)).fetchone()
         return self._claim_from_row(row) if row is not None else None
 
     def list_claims(self, investigation_id: int) -> list[Claim]:
         with self._database.connection_scope() as connection:
             rows = connection.execute(
-                "SELECT * FROM claims WHERE investigation_id = ? ORDER BY id",
+                self._CLAIM_SELECT + " WHERE investigation_id = ? ORDER BY id",
                 (investigation_id,),
             ).fetchall()
         return [self._claim_from_row(row) for row in rows]
@@ -288,7 +373,7 @@ class InvestigationRepository:
     ) -> None:
         with self._database.transaction() as connection:
             claim_row = connection.execute(
-                "SELECT investigation_id FROM claims WHERE id = ?",
+                "SELECT investigation_id, status FROM claims WHERE id = ?",
                 (claim_id,),
             ).fetchone()
             evidence_row = connection.execute(
@@ -309,6 +394,22 @@ class InvestigationRepository:
                 """,
                 (claim_id, evidence_id, relation.value),
             )
+            self._validate_claim_support(connection, claim_id, ClaimStatus(claim_row["status"]))
+
+    def _validate_claim_support(
+        self, connection: sqlite3.Connection, claim_id: int, status: ClaimStatus,
+    ) -> None:
+        rows = connection.execute("""
+            SELECT a.content_hash_enc
+            FROM claim_evidence ce JOIN evidence e ON e.id = ce.evidence_id
+            LEFT JOIN artifacts a ON a.id = e.artifact_id
+            WHERE ce.claim_id = ? AND ce.relation = 'SUPPORTS'
+        """, (claim_id,)).fetchall()
+        sources = {
+            self._sensitive_store.decrypt_text(row["content_hash_enc"])
+            for row in rows if row["content_hash_enc"] is not None
+        }
+        validate_claim_support(status, len(rows), len(sources))
 
     def supporting_evidence_count(self, claim_id: int) -> int:
         with self._database.connection_scope() as connection:
@@ -327,8 +428,19 @@ class InvestigationRepository:
         claim_id: int,
         expected: ClaimStatus,
         target: ClaimStatus,
+        *,
+        review_note: str | None = None,
     ) -> Claim:
         with self._database.transaction() as connection:
+            validate_claim_transition(expected, target)
+            self._validate_claim_support(connection, claim_id, target)
+            if target in {ClaimStatus.CORROBORATED, ClaimStatus.VERIFIED}:
+                if not review_note or not review_note.strip() or len(review_note) > 2000:
+                    raise ValueError("Human review note (1–2000 characters) is required; evidence counts do not verify truth")
+                connection.execute("""
+                    INSERT INTO claim_reviews(claim_id, target_status, note_enc, created_at)
+                    VALUES (?, ?, ?, datetime('now'))
+                """, (claim_id, target.value, self._sensitive_store.encrypt_text(review_note.strip())))
             cursor = connection.execute(
                 """
                 UPDATE claims
@@ -339,7 +451,7 @@ class InvestigationRepository:
             )
             if cursor.rowcount != 1:
                 raise LookupError("Claim changed or no longer exists")
-            row = connection.execute("SELECT * FROM claims WHERE id = ?", (claim_id,)).fetchone()
+            row = connection.execute(self._CLAIM_SELECT + " WHERE id = ?", (claim_id,)).fetchone()
         if row is None:
             raise RuntimeError("Updated claim could not be reloaded")
         return self._claim_from_row(row)
@@ -394,4 +506,5 @@ class InvestigationRepository:
             confidence=float(row["confidence"]) if row["confidence"] is not None else None,
             created_at=str(row["created_at"]),
             updated_at=str(row["updated_at"]),
+            human_reviewed=bool(row["human_reviewed"]),
         )

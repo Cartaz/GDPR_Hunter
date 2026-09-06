@@ -45,7 +45,7 @@ def test_bridge_returns_safe_operational_error_without_leaking_backend_details()
     assert result["ok"] is False
     assert result["error"] == {
         "code": "OPERATION_FAILED",
-        "message": "Operation failed. Check the logs for details.",
+        "message": "Operation failed. Check the logs; retry only after resolving the cause.",
     }
     assert "simulated" not in result["error"]["message"]
 
@@ -66,7 +66,7 @@ def test_bridge_never_infers_artifact_provenance_for_manual_evidence():
     controller = FakeController()
     bridge = Bridge(controller, ResearchRunner(controller))  # type: ignore[arg-type]
 
-    result = bridge.addUserEvidence(7, 99, "Observed sender", "sms.body")
+    result = bridge.addUserEvidence(7, "Observed sender", "sms.body")
 
     assert result["ok"] is True
     assert controller.last_user_evidence == (7, None, "Observed sender", "sms.body")

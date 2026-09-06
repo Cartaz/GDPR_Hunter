@@ -39,6 +39,7 @@ class RecordingInference:
         model: str,
         system_prompt: str,
         user_prompt: str,
+        cancel_requested=None,
     ) -> dict[str, object]:
         self.calls.append((model, system_prompt, user_prompt))
         return self._payload

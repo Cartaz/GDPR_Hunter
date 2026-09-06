@@ -192,6 +192,7 @@ def test_response_schema_v10_migrates_and_remains_append_only(tmp_path) -> None:
         connection.execute("DROP TRIGGER case_responses_no_update")
         connection.execute("DROP TRIGGER case_responses_no_delete")
         connection.execute("DROP TABLE case_responses")
+        connection.execute("DROP TABLE claim_reviews")
         connection.execute("UPDATE schema_meta SET schema_version = 9 WHERE id = 1")
 
     Database(database_path).initialize()
@@ -202,7 +203,7 @@ def test_response_schema_v10_migrates_and_remains_append_only(tmp_path) -> None:
         response_table = connection.execute(
             "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'case_responses'"
         ).fetchone()
-    assert version == Database.CURRENT_SCHEMA_VERSION == 10
+    assert version == Database.CURRENT_SCHEMA_VERSION == 12
     assert response_table is not None
 
     database, _cases, _repository, service, case = build_submitted_case(tmp_path / "append-only")
@@ -247,7 +248,8 @@ def test_frontend_loads_response_content_on_demand_not_in_bootstrap() -> None:
     assert "filesystem" not in record_slot
     assert "network" not in record_slot
 
-    assert "backend.listCaseResponses(caseId" in javascript
-    assert "backend.getCaseResponse(responseId" in javascript
-    assert "backend.recordCaseResponse(" in javascript
-    assert "loadCaseResponses(selectedResponseCaseId)" in javascript
+    responses = (root / "ui" / "web" / "js" / "responses.js").read_text(encoding="utf-8")
+    assert "backend.listCaseResponses(caseId" in responses
+    assert "getBackend().getCaseResponse(responseId" in responses
+    assert "backend.recordCaseResponse(" in responses
+    assert "responses.refresh()" in javascript

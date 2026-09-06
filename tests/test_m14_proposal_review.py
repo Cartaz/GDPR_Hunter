@@ -5,6 +5,7 @@ import pytest
 from core.application.artifact_analyzer import ArtifactAnalyzer
 from core.application.identity_service import IdentityService
 from core.application.investigation_service import InvestigationService
+from core.application.proposal_review_controller import ProposalReviewController
 from core.application.proposal_review_service import ProposalReviewService
 from core.domain.investigation import (
     ClaimProvenance,
@@ -152,7 +153,7 @@ def test_bridge_accepts_only_token_and_emits_state_after_success(tmp_path) -> No
     bridge = Bridge(
         controller,  # type: ignore[arg-type]
         research_runner,
-        proposal_review_service=review,
+        proposal_review_service=ProposalReviewController(review),
     )
 
     forged = bridge.acceptModelClaim("not-a-real-token", True)

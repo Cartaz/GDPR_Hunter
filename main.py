@@ -7,7 +7,8 @@ from pathlib import Path
 
 from PySide6.QtWidgets import QApplication, QMessageBox
 
-from config.settings import AppSettings, SettingsStore
+from config.logging_config import configure_logging
+from config.settings import AppSettings, SettingsStore, validated_inference_endpoint
 from core.application.app_controller import AppController
 from core.application.artifact_analyzer import ArtifactAnalyzer
 from core.application.case_service import CaseService
@@ -15,7 +16,6 @@ from core.application.deadline_engine import DeadlineEngine
 from core.application.egress_policy import EgressPolicy
 from core.application.holiday_calendar import HolidayCalendarProvider
 from core.application.identity_service import IdentityService
-from core.application.inference_endpoint import InferenceEndpoint, InferenceLocation
 from core.application.inference_service import InferenceService
 from core.application.investigation_service import InvestigationService
 from core.application.model_analysis_service import ModelAnalysisService
@@ -23,6 +23,7 @@ from core.application.model_proposal_parser import ModelProposalParser
 from core.application.network_policy import NetworkPolicy
 from core.application.outbound_delivery_service import OutboundDeliveryService
 from core.application.paths import default_app_paths
+from core.application.proposal_review_controller import ProposalReviewController
 from core.application.proposal_review_service import ProposalReviewService
 from core.application.request_approval_service import RequestApprovalService
 from core.application.research_service import ResearchService
@@ -53,32 +54,6 @@ _LOG = logging.getLogger(__name__)
 ROOT_DIR = Path(__file__).resolve().parent
 
 
-def configure_logging() -> None:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    )
-
-
-def _validated_inference_endpoint(settings: AppSettings) -> InferenceEndpoint:
-    try:
-        endpoint = InferenceEndpoint(
-            settings.inference_endpoint,
-            InferenceLocation(settings.inference_location),
-        )
-        endpoint.validate()
-        return endpoint
-    except ValueError:
-        defaults = AppSettings()
-        _LOG.warning("Invalid inference settings; using local defaults", exc_info=True)
-        settings.inference_endpoint = defaults.inference_endpoint
-        settings.inference_location = defaults.inference_location
-        return InferenceEndpoint(
-            defaults.inference_endpoint,
-            InferenceLocation(defaults.inference_location),
-        )
-
-
 def build_controller() -> tuple[
     AppController,
     ModelAnalysisService,
@@ -89,9 +64,12 @@ def build_controller() -> tuple[
     settings = SettingsStore(paths.settings_path).load()
 
     database = Database(paths.database_path)
+    archive_exists = (
+        (paths.database_path.exists() and paths.database_path.stat().st_size > 0)
+        or (paths.artifacts_dir.exists() and any(paths.artifacts_dir.rglob("*.dat")))
+    )
+    master_key = SecretStore().get_or_create_master_key(allow_create=not archive_exists)
     database.initialize()
-
-    master_key = SecretStore().get_or_create_master_key()
     sensitive_store = SensitiveStore(master_key)
 
     identity_service = IdentityService(IdentityRepository(database, sensitive_store))
@@ -130,7 +108,7 @@ def build_controller() -> tuple[
         research_service,
         egress_policy,
     )
-    inference_service = InferenceService(_validated_inference_endpoint(settings))
+    inference_service = InferenceService(validated_inference_endpoint(settings))
     model_analysis_service = ModelAnalysisService(
         investigation_service,
         inference_service,
@@ -161,12 +139,12 @@ def main() -> int:
 
     try:
         controller, model_analysis_service, proposal_review_service, settings = build_controller()
-    except SecretStoreUnavailable:
+    except SecretStoreUnavailable as exc:
         _LOG.critical("Secure credential store unavailable", exc_info=True)
         QMessageBox.critical(
             None,
             "GDPR Hunter",
-            "A secure operating-system credential store is required before GDPR Hunter can start.",
+            str(exc),
         )
         return 1
     except (OSError, RuntimeError, ValueError, sqlite3.Error):
@@ -180,7 +158,7 @@ def main() -> int:
         controller,
         research_runner,
         model_analysis_runner,
-        proposal_review_service,
+        ProposalReviewController(proposal_review_service),
     )
     application.aboutToQuit.connect(research_runner.shutdown)
     application.aboutToQuit.connect(model_analysis_runner.shutdown)
@@ -189,7 +167,9 @@ def main() -> int:
         web_root=ROOT_DIR / "ui" / "web",
         width=settings.window_width,
         height=settings.window_height,
+        runners=(research_runner, model_analysis_runner),
     )
+    window.geometrySaved.connect(SettingsStore(default_app_paths().settings_path).save_window_geometry)
     window.show()
     return application.exec()
 

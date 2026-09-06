@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
 from email import policy
 from email.parser import BytesParser
+from html.parser import HTMLParser
 from urllib.parse import urlsplit
 
-from core.domain.investigation import ArtifactKind, EvidenceKind, EvidenceProvenance
+from core.domain.investigation import (
+    ArtifactKind,
+    EvidenceCandidate,
+    EvidenceKind,
+    EvidenceProvenance,
+)
 
 _URL_RE = re.compile(r"https?://[^\s<>\"']+", re.IGNORECASE)
 _PHONE_RE = re.compile(r"(?<!\w)(?:\+?[0-9][0-9 .()\-/]{5,}[0-9])(?!\w)")
@@ -15,16 +20,33 @@ _EMAIL_DOMAIN_RE = re.compile(r"@([^>\s,;]+)")
 _TRAILING_URL_PUNCTUATION = ".,;:!?)]}"
 
 
-@dataclass(frozen=True, slots=True)
-class EvidenceCandidate:
-    kind: EvidenceKind
-    provenance: EvidenceProvenance
-    value: str
-    source_locator: str
+class _VisibleHTML(HTMLParser):
+    """Read inert text and HTTP links; never execute or fetch HTML content."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.chunks: list[str] = []
+        self._ignored: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag in {"script", "style", "head", "template"}:
+            self._ignored.append(tag)
+        if not self._ignored and tag == "a":
+            self.chunks.extend(value for key, value in attrs if key == "href" and value)
+
+    def handle_endtag(self, tag: str) -> None:
+        if self._ignored and tag == self._ignored[-1]:
+            self._ignored.pop()
+
+    def handle_data(self, data: str) -> None:
+        if not self._ignored:
+            self.chunks.append(data)
 
 
 class ArtifactAnalyzer:
     """Extract bounded, deterministic observations from immutable artifacts."""
+
+    MAX_FINDINGS = 2000
 
     def analyze(self, kind: ArtifactKind, payload: bytes) -> tuple[EvidenceCandidate, ...]:
         if kind is ArtifactKind.EMAIL:
@@ -35,7 +57,10 @@ class ArtifactAnalyzer:
             findings = self._analyze_text(payload)
         else:
             findings = ()
-        return self._deduplicate(findings)
+        result = self._deduplicate(findings)
+        if len(result) > self.MAX_FINDINGS:
+            raise ValueError(f"Artifact analysis exceeds the {self.MAX_FINDINGS} finding limit; split the input")
+        return result
 
     def _analyze_text(self, payload: bytes) -> tuple[EvidenceCandidate, ...]:
         text = self._decode_text(payload)
@@ -109,10 +134,31 @@ class ArtifactAnalyzer:
                     )
                 )
 
-        body = self._email_text_body(message)
-        for index, url in enumerate(self._extract_urls(body)):
-            findings.extend(self._url_findings(url, f"email.body.url[{index}]"))
+        for part_index, part in enumerate(self._email_body_parts(message)):
+            media_type = part.get_content_type()
+            if media_type not in {"text/plain", "text/html"}:
+                continue
+            try:
+                body = part.get_content()
+            except (LookupError, UnicodeError):
+                continue
+            if media_type == "text/html":
+                parser = _VisibleHTML()
+                parser.feed(body)
+                body = "\n".join(parser.chunks)
+            for index, url in enumerate(self._extract_urls(body)):
+                findings.extend(self._url_findings(url, f"email.body.part[{part_index}].url[{index}]"))
         return tuple(findings)
+
+    @classmethod
+    def _email_body_parts(cls, message):
+        if message.get_content_disposition() == "attachment":
+            return
+        if message.is_multipart():
+            for part in message.iter_parts():
+                yield from cls._email_body_parts(part)
+        else:
+            yield message
 
     @staticmethod
     def _decode_text(payload: bytes) -> str:
@@ -165,28 +211,6 @@ class ArtifactAnalyzer:
         return tuple(
             cls._normalize_host(match.group(1).rstrip(">")) for match in _EMAIL_DOMAIN_RE.finditer(value)
         )
-
-    @staticmethod
-    def _email_text_body(message) -> str:
-        if message.is_multipart():
-            chunks: list[str] = []
-            for part in message.walk():
-                if (
-                    part.get_content_type() != "text/plain"
-                    or part.get_content_disposition() == "attachment"
-                ):
-                    continue
-                try:
-                    chunks.append(part.get_content())
-                except (LookupError, UnicodeError):
-                    continue
-            return "\n".join(chunks)
-        if message.get_content_type() == "text/plain":
-            try:
-                return message.get_content()
-            except (LookupError, UnicodeError):
-                return ""
-        return ""
 
     @staticmethod
     def _deduplicate(findings: tuple[EvidenceCandidate, ...]) -> tuple[EvidenceCandidate, ...]:

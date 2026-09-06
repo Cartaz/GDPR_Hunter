@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from typing import Protocol
 
+from core.application.bounded_network import CancellationCheck, OperationCancelled
 from core.application.egress_policy import EgressPolicy, OutboundIntent
 from core.application.investigation_service import InvestigationService
 from core.application.model_proposal_parser import ModelProposalParser
@@ -19,6 +20,7 @@ class InferenceClient(Protocol):
         model: str,
         system_prompt: str,
         user_prompt: str,
+        cancel_requested: CancellationCheck | None = None,
     ) -> dict[str, object]: ...
 
 
@@ -59,7 +61,10 @@ class ModelAnalysisService:
         investigation_id: int,
         *,
         approved_by_user: bool,
+        cancel_requested: CancellationCheck | None = None,
     ) -> tuple[ModelProposal, ...]:
+        if cancel_requested is not None and cancel_requested():
+            raise OperationCancelled("Operation cancelled")
         evidence = self._investigation_service.list_evidence(investigation_id)
         if not evidence:
             raise ValueError("Model analysis requires existing evidence")
@@ -101,5 +106,8 @@ class ModelAnalysisService:
             model=self._model,
             system_prompt=self.SYSTEM_PROMPT,
             user_prompt=user_prompt,
+            cancel_requested=cancel_requested,
         )
+        if cancel_requested is not None and cancel_requested():
+            raise OperationCancelled("Operation cancelled")
         return self._parser.parse(payload, available_evidence_ids=available_ids)

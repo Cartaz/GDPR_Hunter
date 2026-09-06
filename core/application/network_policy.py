@@ -6,6 +6,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from urllib.parse import SplitResult, urlsplit
 
+from core.application.bounded_network import NetworkDeadline
+
 
 class NetworkPolicyError(ValueError):
     pass
@@ -30,9 +32,9 @@ class NetworkPolicy:
     ALLOWED_SCHEMES = frozenset({"http", "https"})
 
     def __init__(self, resolver: Resolver | None = None) -> None:
-        self._resolver = resolver or socket.getaddrinfo
+        self._resolver = resolver
 
-    def validate_public_url(self, url: str) -> ValidatedPublicUrl:
+    def validate_public_url(self, url: str, *, deadline: NetworkDeadline | None = None) -> ValidatedPublicUrl:
         normalized = url.strip()
         if not normalized or "\\" in normalized:
             raise NetworkPolicyError("Research URL is malformed")
@@ -46,7 +48,7 @@ class NetworkPolicy:
         if port != expected_port:
             raise NetworkPolicyError("Research URL uses a disallowed port")
 
-        addresses = self.resolve_public_host(hostname, port)
+        addresses = self.resolve_public_host(hostname, port, deadline=deadline)
         request_target = parsed.path or "/"
         if parsed.query:
             request_target += f"?{parsed.query}"
@@ -59,7 +61,9 @@ class NetworkPolicy:
             addresses=addresses,
         )
 
-    def resolve_public_host(self, hostname: str, port: int = 443) -> tuple[str, ...]:
+    def resolve_public_host(
+        self, hostname: str, port: int = 443, *, deadline: NetworkDeadline | None = None,
+    ) -> tuple[str, ...]:
         normalized = self._normalize_hostname(hostname)
         try:
             literal = ipaddress.ip_address(normalized)
@@ -70,7 +74,13 @@ class NetworkPolicy:
             return (literal.compressed,)
 
         try:
-            rows = self._resolver(normalized, port, socket.AF_UNSPEC, socket.SOCK_STREAM)
+            if self._resolver is not None:
+                rows = self._resolver(normalized, port, socket.AF_UNSPEC, socket.SOCK_STREAM)
+            elif deadline is not None:
+                rows = deadline.resolve(normalized, port)
+            else:
+                with NetworkDeadline(8.0) as resolver_deadline:
+                    rows = resolver_deadline.resolve(normalized, port)
         except OSError as exc:
             raise NetworkPolicyError("Research host could not be resolved") from exc
 

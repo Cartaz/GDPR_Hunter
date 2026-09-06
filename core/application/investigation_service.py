@@ -16,6 +16,7 @@ from core.domain.investigation import (
     ClaimProvenance,
     ClaimStatus,
     Evidence,
+    EvidenceCandidate,
     EvidenceKind,
     EvidenceProvenance,
     EvidenceRelation,
@@ -92,7 +93,11 @@ class InvestigationService:
         self._require_investigation(investigation_id)
         return self._repository.list_artifacts(investigation_id)
 
-    def analyze_artifact(self, investigation_id: int, artifact_id: int) -> list[Evidence]:
+    def analyze_artifact(
+        self, investigation_id: int, artifact_id: int, *,
+        cancel_requested: CancellationCheck | None = None,
+    ) -> list[Evidence]:
+        self._raise_if_cancelled(cancel_requested)
         self._require_investigation(investigation_id)
         artifact = next(
             (item for item in self._repository.list_artifacts(investigation_id) if item.id == artifact_id),
@@ -102,32 +107,8 @@ class InvestigationService:
             raise LookupError("Artifact is not attached to this investigation")
         payload = self._artifact_store.read(artifact.storage_key)
         findings = self._artifact_analyzer.analyze(artifact.kind, payload)
-        existing = {
-            (item.artifact_id, item.kind, item.provenance, item.value, item.source_locator)
-            for item in self._repository.list_evidence(investigation_id)
-        }
-        created: list[Evidence] = []
-        for candidate in findings:
-            key = (
-                artifact_id,
-                candidate.kind,
-                candidate.provenance,
-                candidate.value,
-                candidate.source_locator,
-            )
-            if key in existing:
-                continue
-            evidence = self.add_evidence(
-                investigation_id,
-                artifact_id,
-                candidate.kind,
-                candidate.provenance,
-                candidate.value,
-                candidate.source_locator,
-            )
-            created.append(evidence)
-            existing.add(key)
-        return created
+        self._raise_if_cancelled(cancel_requested)
+        return self._repository.add_analysis_evidence(investigation_id, artifact_id, findings)
 
     def research_artifact_urls(
         self,
@@ -210,7 +191,7 @@ class InvestigationService:
         source_url = source.value
         if source_url is None or not source_url.lower().startswith(("http://", "https://")):
             raise ValueError("Research Evidence must contain an HTTP(S) URL")
-        marker = f"research.request:{source_url}"
+        marker = f"research.complete.v1:{source_url}"
         fingerprint = (EvidenceProvenance.REMOTE_DOCUMENT, source_url, marker)
         if fingerprint in existing:
             return []
@@ -232,46 +213,40 @@ class InvestigationService:
         # Persistence of one fetched document is a coherent unit. Honour a
         # cancellation before starting that unit, not halfway through it.
         self._raise_if_cancelled(cancel_requested)
-        reference = self.import_artifact(
-            investigation_id,
-            ArtifactKind.TEXT,
-            ArtifactRole.REFERENCE,
-            document.content_type,
-            document.body,
-        )
-        created = [
-            self.add_evidence(
-                investigation_id,
-                reference.id,
-                EvidenceKind.OBSERVATION,
-                EvidenceProvenance.REMOTE_DOCUMENT,
-                source_url,
-                marker,
-            )
+        if not document.body or len(document.body) > self.MAX_ARTIFACT_BYTES:
+            raise ValueError("Research document is empty or exceeds the artifact size limit")
+        findings = [
+            EvidenceCandidate(
+                EvidenceKind.OBSERVATION, EvidenceProvenance.REMOTE_DOCUMENT,
+                source_url, f"research.request:{source_url}",
+            ),
+            EvidenceCandidate(
+                EvidenceKind.OBSERVATION, EvidenceProvenance.REMOTE_DOCUMENT,
+                document.final_url, "research.final_url",
+            ),
         ]
         for index, hop in enumerate(document.redirects):
-            created.append(
-                self.add_evidence(
-                    investigation_id,
-                    reference.id,
-                    EvidenceKind.OBSERVATION,
-                    EvidenceProvenance.REMOTE_DOCUMENT,
-                    f"{hop.status} {hop.source_url} -> {hop.destination_url}",
-                    f"research.redirect[{index}]",
-                )
-            )
-        created.append(
-            self.add_evidence(
-                investigation_id,
-                reference.id,
-                EvidenceKind.OBSERVATION,
-                EvidenceProvenance.REMOTE_DOCUMENT,
-                document.final_url,
-                "research.final_url",
-            )
+            findings.append(EvidenceCandidate(
+                EvidenceKind.OBSERVATION, EvidenceProvenance.REMOTE_DOCUMENT,
+                f"{hop.status} {hop.source_url} -> {hop.destination_url}",
+                f"research.redirect[{index}]",
+            ))
+        findings.extend(self._artifact_analyzer.analyze(ArtifactKind.TEXT, document.body))
+        completion = EvidenceCandidate(
+            EvidenceKind.OBSERVATION, EvidenceProvenance.REMOTE_DOCUMENT, source_url, marker,
         )
-        if reference.id is not None:
-            created.extend(self.analyze_artifact(investigation_id, reference.id))
+        self._raise_if_cancelled(cancel_requested)
+        storage_key = self._artifact_store.store(document.body)
+        try:
+            created = self._repository.add_research_document(
+                investigation_id, storage_key, document.content_type,
+                document.body, tuple(findings), completion,
+            )
+        except Exception:
+            self._artifact_store.delete(storage_key)
+            raise
+        if not created:
+            self._artifact_store.delete(storage_key)
         existing.add(fingerprint)
         return created
 
@@ -357,17 +332,14 @@ class InvestigationService:
     def attach_evidence(self, claim_id: int, evidence_id: int, relation: EvidenceRelation) -> None:
         self._repository.attach_evidence(claim_id, evidence_id, relation)
 
-    def transition_claim(self, claim_id: int, target: ClaimStatus) -> Claim:
+    def transition_claim(
+        self, claim_id: int, target: ClaimStatus, *, review_note: str | None = None,
+    ) -> Claim:
         claim = self._repository.get_claim(claim_id)
         if claim is None:
             raise LookupError("Claim does not exist")
         validate_claim_transition(claim.status, target)
-        supporting_count = self._repository.supporting_evidence_count(claim_id)
-        if target is ClaimStatus.SUPPORTED and supporting_count < 1:
-            raise ValueError("Supported claims require supporting evidence")
-        if target in {ClaimStatus.CORROBORATED, ClaimStatus.VERIFIED} and supporting_count < 2:
-            raise ValueError("Corroborated or verified claims require at least two supporting evidence items")
-        return self._repository.update_claim_status(claim_id, claim.status, target)
+        return self._repository.update_claim_status(claim_id, claim.status, target, review_note=review_note)
 
     def _require_investigation(self, investigation_id: int) -> Investigation:
         investigation = self._repository.get_investigation(investigation_id)

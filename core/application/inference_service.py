@@ -1,10 +1,17 @@
 from __future__ import annotations
 
 import json
-from http.client import HTTPConnection, HTTPException, HTTPSConnection
+from http.client import HTTPException
 from typing import Any
 
+from core.application.bounded_network import (
+    CancellationCheck,
+    HTTPConnection,
+    HTTPSConnection,
+    NetworkDeadline,
+)
 from core.application.inference_endpoint import InferenceEndpoint
+from core.application.strict_json import loads
 
 
 class InferenceProtocolError(RuntimeError):
@@ -38,6 +45,7 @@ class InferenceService:
         model: str,
         system_prompt: str,
         user_prompt: str,
+        cancel_requested: CancellationCheck | None = None,
     ) -> dict[str, Any]:
         if not model.strip():
             raise ValueError("Inference model is required")
@@ -53,7 +61,7 @@ class InferenceService:
             "stream": False,
             "response_format": {"type": "json_object"},
         }
-        response = self._post_json("/v1/chat/completions", payload)
+        response = self._post_json("/v1/chat/completions", payload, cancel_requested=cancel_requested)
         try:
             content = response["choices"][0]["message"]["content"]
         except (KeyError, IndexError, TypeError) as exc:
@@ -61,45 +69,52 @@ class InferenceService:
         if not isinstance(content, str):
             raise InferenceProtocolError("Inference assistant content must be text")
         try:
-            decoded = json.loads(content)
-        except json.JSONDecodeError as exc:
+            decoded = loads(content)
+        except ValueError as exc:
             raise InferenceProtocolError("Inference assistant content is not valid JSON") from exc
         if not isinstance(decoded, dict):
             raise InferenceProtocolError("Inference assistant JSON must be an object")
         return decoded
 
-    def _post_json(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
+    def _post_json(
+        self, path: str, payload: dict[str, Any], *,
+        cancel_requested: CancellationCheck | None = None,
+    ) -> dict[str, Any]:
         body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
-        connection_type = HTTPSConnection if self._parsed.scheme == "https" else HTTPConnection
-        connection = connection_type(
-            self._parsed.hostname,
-            port=self._parsed.port,
-            timeout=self._timeout_seconds,
-        )
-        try:
-            connection.request(
-                "POST",
-                path,
-                body=body,
-                headers={"Content-Type": "application/json", "Accept": "application/json"},
+        with NetworkDeadline(self._timeout_seconds, cancel_requested) as deadline:
+            connection_type = HTTPSConnection if self._parsed.scheme == "https" else HTTPConnection
+            connection = connection_type(
+                self._parsed.hostname,
+                port=self._parsed.port,
+                timeout=self._timeout_seconds,
+                deadline=deadline,
             )
-            response = connection.getresponse()
-            if response.status < 200 or response.status >= 300:
-                raise InferenceProtocolError(f"Inference server returned HTTP {response.status}")
-            content_type = response.getheader("Content-Type", "").split(";", 1)[0].strip().lower()
-            if content_type not in {"application/json", "text/json"}:
-                raise InferenceProtocolError("Inference server returned a non-JSON response")
-            raw = response.read(self._max_response_bytes + 1)
-            if len(raw) > self._max_response_bytes:
-                raise InferenceProtocolError("Inference response exceeded the configured size limit")
-        except (OSError, HTTPException) as exc:
-            raise ConnectionError("Inference endpoint request failed") from exc
-        finally:
-            connection.close()
+            try:
+                connection.request(
+                    "POST",
+                    path,
+                    body=body,
+                    headers={"Content-Type": "application/json", "Accept": "application/json"},
+                )
+                response = connection.getresponse()
+                if response.status < 200 or response.status >= 300:
+                    raise InferenceProtocolError(f"Inference server returned HTTP {response.status}")
+                content_type = response.getheader("Content-Type", "").split(";", 1)[0].strip().lower()
+                if content_type not in {"application/json", "text/json"}:
+                    raise InferenceProtocolError("Inference server returned a non-JSON response")
+                raw = response.read(self._max_response_bytes + 1)
+                deadline.check()
+                if len(raw) > self._max_response_bytes:
+                    raise InferenceProtocolError("Inference response exceeded the configured size limit")
+            except (OSError, HTTPException) as exc:
+                deadline.check()
+                raise ConnectionError("Inference endpoint request failed") from exc
+            finally:
+                connection.close()
 
         try:
-            decoded = json.loads(raw)
-        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            decoded = loads(raw)
+        except ValueError as exc:
             raise InferenceProtocolError("Inference server response is not valid JSON") from exc
         if not isinstance(decoded, dict):
             raise InferenceProtocolError("Inference server response must be a JSON object")

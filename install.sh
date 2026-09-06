@@ -33,8 +33,16 @@ PY
 fi
 
 if [[ "$venv_is_usable" != true ]]; then
-    rm -rf -- "$VENV_DIR"
+    if [[ -e "$VENV_DIR" ]]; then
+        VENV_BACKUP_DIR="$(mktemp -d "$ROOT_DIR/.venv-backup.XXXXXX")"
+        mv -- "$VENV_DIR" "$VENV_BACKUP_DIR/venv"
+        printf 'Preserved the unusable environment in %s\n' "$VENV_BACKUP_DIR"
+    fi
     "$PYTHON_BIN" -m venv "$VENV_DIR"
+fi
+
+if ! "$VENV_DIR/bin/python" -m pip --version >/dev/null 2>&1; then
+    "$VENV_DIR/bin/python" -m ensurepip --upgrade
 fi
 
 "$VENV_DIR/bin/python" -m pip install --upgrade pip

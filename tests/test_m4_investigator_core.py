@@ -98,9 +98,15 @@ def test_claim_promotion_requires_increasing_supporting_evidence(tmp_path):
     assert claim.id is not None
     with pytest.raises(ValueError, match="Supported claims require"):
         service.transition_claim(claim.id, ClaimStatus.SUPPORTED)
+    first_artifact = service.import_artifact(
+        investigation.id, ArtifactKind.TEXT, ArtifactRole.SUPPORTING, "text/plain", b"Company response",
+    )
+    second_artifact = service.import_artifact(
+        investigation.id, ArtifactKind.TEXT, ArtifactRole.SUPPORTING, "text/plain", b"Registry extract",
+    )
     first = service.add_evidence(
         investigation.id,
-        None,
+        first_artifact.id,
         EvidenceKind.SOURCE_STATEMENT,
         EvidenceProvenance.COMPANY_RESPONSE,
         "We obtained your number from Broker X",
@@ -114,7 +120,7 @@ def test_claim_promotion_requires_increasing_supporting_evidence(tmp_path):
         service.transition_claim(claim.id, ClaimStatus.CORROBORATED)
     second = service.add_evidence(
         investigation.id,
-        None,
+        second_artifact.id,
         EvidenceKind.OBSERVATION,
         EvidenceProvenance.AUTHORITATIVE_SOURCE,
         "Broker X is identified as the campaign lead provider",
@@ -122,8 +128,8 @@ def test_claim_promotion_requires_increasing_supporting_evidence(tmp_path):
     )
     assert second.id is not None
     service.attach_evidence(claim.id, second.id, EvidenceRelation.SUPPORTS)
-    corroborated = service.transition_claim(claim.id, ClaimStatus.CORROBORATED)
-    verified = service.transition_claim(corroborated.id, ClaimStatus.VERIFIED)
+    corroborated = service.transition_claim(claim.id, ClaimStatus.CORROBORATED, review_note="Independent sources checked")
+    verified = service.transition_claim(corroborated.id, ClaimStatus.VERIFIED, review_note="Original response verified with sender")
     assert verified.status is ClaimStatus.VERIFIED
 
 

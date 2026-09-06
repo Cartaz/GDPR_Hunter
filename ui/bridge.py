@@ -1,24 +1,22 @@
 from __future__ import annotations
 
 import logging
-import sqlite3
 
 from PySide6.QtCore import QObject, Signal, Slot
 
 from core.application.app_controller import AppController
-from core.application.proposal_review_service import (
-    ProposalReviewService,
-    ReviewProposal,
-)
-from core.domain.investigation import Claim
-from core.domain.model_proposal import ClaimProposal, ResearchEvidenceProposal
+from core.application.proposal_review_controller import ProposalReviewController
 from ui.model_analysis_runner import ModelAnalysisRunner
+from ui.operation_errors import operation_error
 from ui.research_runner import ResearchRunner
 
 _LOG = logging.getLogger(__name__)
 
 
 class Bridge(QObject):
+    artifactAnalysisStarted = Signal(int, int)
+    artifactAnalysisCompleted = Signal(int, int, object)
+    artifactAnalysisFailed = Signal(int, int, str, str)
     stateChanged = Signal(object)
     operationFailed = Signal(str, str)
     researchStarted = Signal(int, int)
@@ -36,13 +34,16 @@ class Bridge(QObject):
         controller: AppController,
         research_runner: ResearchRunner,
         model_analysis_runner: ModelAnalysisRunner | None = None,
-        proposal_review_service: ProposalReviewService | None = None,
+        proposal_review_service: ProposalReviewController | None = None,
     ) -> None:
         super().__init__()
         self._controller = controller
         self._research_runner = research_runner
         self._model_analysis_runner = model_analysis_runner
         self._proposal_review_service = proposal_review_service
+        research_runner.artifactAnalysisStarted.connect(self.artifactAnalysisStarted)
+        research_runner.artifactAnalysisSucceeded.connect(self._artifact_analysis_succeeded)
+        research_runner.artifactAnalysisFailed.connect(self.artifactAnalysisFailed)
         research_runner.researchStarted.connect(self.researchStarted)
         research_runner.researchSucceeded.connect(self._research_succeeded)
         research_runner.researchFailed.connect(self._research_failed)
@@ -56,7 +57,7 @@ class Bridge(QObject):
 
     @Slot(result="QVariant")
     def getBootstrapState(self) -> dict[str, object]:
-        return self._controller.get_bootstrap_state()
+        return self._read(self._controller.get_bootstrap_state)
 
     @Slot(str, result="QVariant")
     def setDisplayName(self, display_name: str) -> dict[str, object]:
@@ -134,6 +135,12 @@ class Bridge(QObject):
                 approved_by_user=True,
             )
         )
+
+    @Slot(int, result="QVariant")
+    def getApprovedRequest(self, approved_request_id: int) -> dict[str, object]:
+        if approved_request_id <= 0:
+            return self._fail("INVALID_INPUT", "Approved request id must be positive")
+        return self._read(lambda: self._controller.get_approved_request(approved_request_id))
 
     @Slot(int, int, str, str, bool, result="QVariant")
     def submitCase(
@@ -233,7 +240,15 @@ class Bridge(QObject):
 
     @Slot(int, int, result="QVariant")
     def analyzeArtifact(self, investigation_id: int, artifact_id: int) -> dict[str, object]:
-        return self._mutate(lambda: self._controller.analyze_artifact(investigation_id, artifact_id))
+        if investigation_id <= 0 or artifact_id <= 0:
+            return self._fail("INVALID_INPUT", "Investigation and artifact ids must be positive")
+        if not self._research_runner.start_analysis(investigation_id, artifact_id):
+            return self._fail("BUSY", "Another analysis or research operation is already running")
+        return {"ok": True}
+
+    @Slot(int, int, object)
+    def _artifact_analysis_succeeded(self, investigation_id: int, artifact_id: int, result: object) -> None:
+        self.artifactAnalysisCompleted.emit(investigation_id, artifact_id, result)
 
     @Slot(int, int, bool, result="QVariant")
     def researchArtifactUrls(
@@ -281,15 +296,7 @@ class Bridge(QObject):
         review_service = self._proposal_review_service
         if review_service is None:
             return self._fail("CAPABILITY_UNAVAILABLE", "Model proposal review is not configured")
-        try:
-            claim = review_service.accept_claim(proposal_token, approved_by_user=True)
-        except (TypeError, ValueError, LookupError) as exc:
-            return self._fail("INVALID_INPUT", str(exc))
-        except (OSError, sqlite3.Error):
-            _LOG.exception("Model claim persistence failed")
-            return self._fail("OPERATION_FAILED", "Operation failed. Check the logs for details.")
-        self.stateChanged.emit(self._controller.get_bootstrap_state())
-        return {"ok": True, "result": self._claim_dto(claim)}
+        return self._mutate(lambda: review_service.accept_claim(proposal_token, approved_by_user=True))
 
     @Slot(str, bool, result="QVariant")
     def executeModelResearchProposal(
@@ -317,8 +324,8 @@ class Bridge(QObject):
         # Bridge slots execute serially on the GUI thread. No event-loop turn occurs
         # between the idle check above, token consumption, and this start call.
         if not self._research_runner.start_model_evidence(
-            request.investigation_id,
-            request.evidence_id,
+            request["investigationId"],
+            request["evidenceId"],
             approved_by_user=True,
         ):
             _LOG.error("Research runner became busy after reviewed proposal resolution")
@@ -326,8 +333,8 @@ class Bridge(QObject):
         return {
             "ok": True,
             "result": {
-                "investigationId": request.investigation_id,
-                "evidenceId": request.evidence_id,
+                "investigationId": request["investigationId"],
+                "evidenceId": request["evidenceId"],
             },
         }
 
@@ -342,11 +349,10 @@ class Bridge(QObject):
             return self._fail("INVALID_INPUT", str(exc))
         return {"ok": True}
 
-    @Slot(int, int, str, str, result="QVariant")
+    @Slot(int, str, str, result="QVariant")
     def addUserEvidence(
         self,
         investigation_id: int,
-        _artifact_id: int,
         value: str,
         source_locator: str,
     ) -> dict[str, object]:
@@ -377,7 +383,7 @@ class Bridge(QObject):
         artifact_id: int,
         result: object,
     ) -> None:
-        self.stateChanged.emit(self._controller.get_bootstrap_state())
+        self._refresh_state()
         self.researchCompleted.emit(investigation_id, artifact_id, result)
 
     @Slot(int, int, str, str)
@@ -399,7 +405,7 @@ class Bridge(QObject):
         evidence_id: int,
         result: object,
     ) -> None:
-        self.stateChanged.emit(self._controller.get_bootstrap_state())
+        self._refresh_state()
         self.modelResearchCompleted.emit(investigation_id, evidence_id, result)
 
     @Slot(int, int, str, str)
@@ -424,9 +430,12 @@ class Bridge(QObject):
                 "Model proposal review is not configured",
             )
             return
-        registered = review_service.register(investigation_id, tuple(result))
-        proposals = [self._proposal_dto(item) for item in registered]
-        self.modelAnalysisCompleted.emit(investigation_id, {"proposals": proposals})
+        try:
+            proposals = review_service.register(investigation_id, tuple(result))
+        except Exception as exc:  # noqa: BLE001 -- UI boundary must always return a terminal error
+            self._model_analysis_failed(investigation_id, *operation_error(exc))
+            return
+        self.modelAnalysisCompleted.emit(investigation_id, proposals)
 
     @Slot(int, str, str)
     def _model_analysis_failed(
@@ -438,38 +447,6 @@ class Bridge(QObject):
         _LOG.warning("Asynchronous model analysis failed: code=%s", code)
         self.modelAnalysisFailed.emit(investigation_id, code, message)
         self.operationFailed.emit(code, message)
-
-    @staticmethod
-    def _proposal_dto(reviewed: ReviewProposal) -> dict[str, object]:
-        proposal = reviewed.proposal
-        if isinstance(proposal, ClaimProposal):
-            return {
-                "token": reviewed.token,
-                "kind": "CLAIM",
-                "statement": proposal.statement,
-                "evidenceIds": list(proposal.evidence_ids),
-                "confidence": proposal.confidence,
-            }
-        if isinstance(proposal, ResearchEvidenceProposal):
-            return {
-                "token": reviewed.token,
-                "kind": "RESEARCH_EVIDENCE",
-                "evidenceId": proposal.evidence_id,
-                "rationale": proposal.rationale,
-            }
-        raise TypeError("Unsupported model proposal type")
-
-    @staticmethod
-    def _claim_dto(claim: Claim) -> dict[str, object]:
-        return {
-            "id": claim.id,
-            "statement": claim.statement,
-            "status": claim.status.value,
-            "provenance": claim.provenance.value,
-            "confidence": claim.confidence,
-            "createdAt": claim.created_at,
-            "updatedAt": claim.updated_at,
-        }
 
     @staticmethod
     def _identifier_ids(value: object) -> tuple[int, ...]:
@@ -490,22 +467,26 @@ class Bridge(QObject):
     def _read(self, operation):
         try:
             return operation()
-        except (TypeError, ValueError, LookupError) as exc:
-            return self._fail("INVALID_INPUT", str(exc))
-        except (OSError, sqlite3.Error):
-            _LOG.exception("Bridge read operation failed")
-            return self._fail("OPERATION_FAILED", "Operation failed. Check the logs for details.")
+        except Exception as exc:  # noqa: BLE001 -- UI boundary must always return a terminal error
+            return self._fail(*operation_error(exc))
 
     def _mutate(self, operation) -> dict[str, object]:
         try:
             result = operation()
-        except (TypeError, ValueError, LookupError) as exc:
-            return self._fail("INVALID_INPUT", str(exc))
-        except (OSError, sqlite3.Error):
-            _LOG.exception("Bridge mutation failed")
-            return self._fail("OPERATION_FAILED", "Operation failed. Check the logs for details.")
-        self.stateChanged.emit(self._controller.get_bootstrap_state())
-        return {"ok": True, "result": result}
+        except Exception as exc:  # noqa: BLE001 -- UI boundary must always return a terminal error
+            return self._fail(*operation_error(exc))
+        refreshed = self._refresh_state()
+        response = {"ok": True, "result": result}
+        if not refreshed:
+            response["warning"] = "Saved successfully, but the display could not be refreshed. Do not repeat the action."
+        return response
+
+    def _refresh_state(self) -> bool:
+        state = self._read(self._controller.get_bootstrap_state)
+        if "error" in state:
+            return False
+        self.stateChanged.emit(state)
+        return True
 
     def _fail(self, code: str, message: str) -> dict[str, object]:
         _LOG.warning("Bridge operation failed: code=%s", code)

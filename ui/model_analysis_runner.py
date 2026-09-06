@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import logging
+import threading
 
 from PySide6.QtCore import QObject, QThread, Signal, Slot
 
 from core.application.model_analysis_service import ModelAnalysisService
-
-_LOG = logging.getLogger(__name__)
+from ui.operation_errors import operation_error
 
 
 class _ModelAnalysisWorker(QObject):
@@ -19,11 +18,13 @@ class _ModelAnalysisWorker(QObject):
         service: ModelAnalysisService,
         investigation_id: int,
         approved_by_user: bool,
+        cancel_event: threading.Event | None = None,
     ) -> None:
         super().__init__()
         self._service = service
         self._investigation_id = investigation_id
         self._approved_by_user = approved_by_user
+        self._cancel_event = cancel_event if cancel_event is not None else threading.Event()
 
     @Slot()
     def run(self) -> None:
@@ -31,21 +32,11 @@ class _ModelAnalysisWorker(QObject):
             result = self._service.propose(
                 self._investigation_id,
                 approved_by_user=self._approved_by_user,
+                cancel_requested=self._cancel_event.is_set,
             )
-        except (ValueError, LookupError) as exc:
-            self.failed.emit(self._investigation_id, "INVALID_INPUT", str(exc))
-        except PermissionError as exc:
-            self.failed.emit(self._investigation_id, "APPROVAL_REQUIRED", str(exc))
-        except (ConnectionError, RuntimeError) as exc:
-            _LOG.warning("Model analysis operation failed")
-            self.failed.emit(self._investigation_id, "MODEL_ANALYSIS_FAILED", str(exc))
-        except OSError:
-            _LOG.exception("Model analysis I/O operation failed")
-            self.failed.emit(
-                self._investigation_id,
-                "MODEL_ANALYSIS_FAILED",
-                "Model analysis failed. Check the logs for details.",
-            )
+        except Exception as exc:  # noqa: BLE001 -- UI boundary must always return a terminal error
+            code, message = operation_error(exc)
+            self.failed.emit(self._investigation_id, code, message)
         else:
             self.succeeded.emit(self._investigation_id, result)
         finally:
@@ -59,11 +50,11 @@ class ModelAnalysisRunner(QObject):
     analysisSucceeded = Signal(int, object)
     analysisFailed = Signal(int, str, str)
 
-    SHUTDOWN_WAIT_MS = 180_000
-
     def __init__(self, service: ModelAnalysisService) -> None:
         super().__init__()
         self._service = service
+        self._stopping = False
+        self._cancel_event = threading.Event()
         self._thread: QThread | None = None
         self._worker: _ModelAnalysisWorker | None = None
 
@@ -72,14 +63,16 @@ class ModelAnalysisRunner(QObject):
         return self._thread is not None
 
     def start(self, investigation_id: int, *, approved_by_user: bool) -> bool:
-        if self.is_busy:
+        if self.is_busy or self._stopping:
             return False
 
+        self._cancel_event.clear()
         thread = QThread(self)
         worker = _ModelAnalysisWorker(
             self._service,
             investigation_id,
             approved_by_user,
+            self._cancel_event,
         )
         worker.moveToThread(thread)
 
@@ -115,11 +108,16 @@ class ModelAnalysisRunner(QObject):
         self._thread = None
         self._worker = None
 
+    def request_stop(self) -> None:
+        self._stopping = True
+        self._cancel_event.set()
+        if self._thread is not None:
+            self._thread.requestInterruption()
+            self._thread.quit()
+
     def shutdown(self) -> None:
-        thread = self._thread
-        if thread is None:
-            return
-        thread.requestInterruption()
-        thread.quit()
-        if not thread.wait(self.SHUTDOWN_WAIT_MS):
-            _LOG.error("Model analysis worker did not stop within the bounded shutdown window")
+        # Final safety net for application.quit/session teardown. Normal window
+        # close uses nonblocking request_stop and waits for finished in the GUI.
+        self.request_stop()
+        if self._thread is not None:
+            self._thread.wait()

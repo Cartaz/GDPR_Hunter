@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from config.settings import AppSettings, SettingsStore
-from main import _validated_inference_endpoint
+from config.settings import AppSettings, SettingsStore, validated_inference_endpoint
 
 
 def test_malformed_settings_fall_back_to_defaults(tmp_path):
@@ -20,7 +19,7 @@ def test_settings_are_bounded_and_choices_validated(tmp_path):
 
     settings = SettingsStore(path).load()
 
-    assert settings.window_width == 960
+    assert settings.window_width == 1100
     assert settings.window_height == 2160
     assert settings.inference_location == "LOCAL_PROCESS"
 
@@ -31,7 +30,7 @@ def test_semantically_invalid_inference_settings_recover_to_local_defaults() -> 
         inference_location="REMOTE",
     )
 
-    endpoint = _validated_inference_endpoint(settings)
+    endpoint = validated_inference_endpoint(settings)
 
     defaults = AppSettings()
     assert endpoint.url == defaults.inference_endpoint
@@ -47,3 +46,16 @@ def test_settings_save_is_round_trip(tmp_path):
     store.save(expected)
 
     assert store.load() == expected
+
+
+def test_geometry_save_preserves_inference_and_malformed_original(tmp_path):
+    path = tmp_path / "settings.json"
+    store = SettingsStore(path)
+    expected = AppSettings(inference_endpoint="http://192.168.1.50:8080", inference_location="USER_APPROVED_LAN")
+    store.save(expected)
+    store.save_window_geometry(1500, 950)
+    expected.window_width, expected.window_height = 1500, 950
+    assert store.load() == expected
+    path.write_bytes(b"\xffbroken")
+    store.save_window_geometry(1600, 1000)
+    assert path.read_bytes() == b"\xffbroken"

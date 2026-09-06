@@ -170,6 +170,9 @@ class AppController:
         )
         return self._approved_request_dto(request)
 
+    def get_approved_request(self, approved_request_id: int) -> dict[str, object]:
+        return self._approved_request_dto(self._request_approval_service.get(approved_request_id))
+
     def handoff_approved_request(
         self,
         approved_request_id: int,
@@ -276,8 +279,13 @@ class AppController:
         )
         return self._artifact_dto(artifact)
 
-    def analyze_artifact(self, investigation_id: int, artifact_id: int) -> dict[str, object]:
-        created = self._investigation_service.analyze_artifact(investigation_id, artifact_id)
+    def analyze_artifact(
+        self, investigation_id: int, artifact_id: int, *,
+        cancel_requested: CancellationCheck | None = None,
+    ) -> dict[str, object]:
+        created = self._investigation_service.analyze_artifact(
+            investigation_id, artifact_id, cancel_requested=cancel_requested,
+        )
         return {
             "createdCount": len(created),
             "evidence": [self._evidence_dto(item) for item in created],
@@ -578,6 +586,7 @@ class AppController:
             "status": claim.status.value,
             "provenance": claim.provenance.value,
             "confidence": claim.confidence,
+            "humanReviewed": claim.human_reviewed,
             "createdAt": claim.created_at,
             "updatedAt": claim.updated_at,
         }

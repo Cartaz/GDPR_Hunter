@@ -84,6 +84,14 @@ class EvidenceProvenance(StrEnum):
     AUTHORITATIVE_SOURCE = "AUTHORITATIVE_SOURCE"
 
 
+@dataclass(frozen=True, slots=True)
+class EvidenceCandidate:
+    kind: EvidenceKind
+    provenance: EvidenceProvenance
+    value: str
+    source_locator: str
+
+
 class ClaimStatus(StrEnum):
     HYPOTHESIS = "HYPOTHESIS"
     SUPPORTED = "SUPPORTED"
@@ -114,6 +122,13 @@ _ALLOWED_CLAIM_TRANSITIONS: dict[ClaimStatus, frozenset[ClaimStatus]] = {
 def validate_claim_transition(current: ClaimStatus, target: ClaimStatus) -> None:
     if target not in _ALLOWED_CLAIM_TRANSITIONS[current]:
         raise ValueError(f"Invalid claim transition: {current.value} -> {target.value}")
+
+
+def validate_claim_support(status: ClaimStatus, supporting_count: int, source_count: int) -> None:
+    if status is ClaimStatus.SUPPORTED and supporting_count < 1:
+        raise ValueError("Supported claims require supporting evidence")
+    if status in {ClaimStatus.CORROBORATED, ClaimStatus.VERIFIED} and source_count < 2:
+        raise ValueError("Corroborated or verified claims require at least two distinct supporting artifacts")
 
 
 class ClaimProvenance(StrEnum):
@@ -169,3 +184,4 @@ class Claim:
     confidence: float | None
     created_at: str
     updated_at: str
+    human_reviewed: bool = False

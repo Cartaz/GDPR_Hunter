@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QUrl
+from PySide6.QtCore import QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWebChannel import QWebChannel
 from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineSettings
@@ -38,11 +38,18 @@ class LocalOnlyPage(QWebEnginePage):
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, bridge: Bridge, web_root: Path, width: int, height: int) -> None:
+    geometrySaved = Signal(int, int)
+
+    def __init__(self, bridge: Bridge, web_root: Path, width: int, height: int, *, runners=()) -> None:
         super().__init__()
         self.setWindowTitle("GDPR Hunter")
         self.setMinimumSize(1100, 720)
         self.resize(width, height)
+        self._runners = tuple(runners)
+        self._closing = False
+        self._close_timer = QTimer(self)
+        self._close_timer.setInterval(50)
+        self._close_timer.timeout.connect(self._finish_close)
 
         resolved_web_root = web_root.resolve()
         self._view = QWebEngineView(self)
@@ -60,3 +67,21 @@ class MainWindow(QMainWindow):
 
         index = (resolved_web_root / "index.html").resolve()
         self._view.setUrl(QUrl.fromLocalFile(str(index)))
+
+    def closeEvent(self, event) -> None:  # type: ignore[override]
+        if any(runner.is_busy for runner in self._runners):
+            event.ignore()
+            self._closing = True
+            self._view.setEnabled(False)
+            self.setWindowTitle("GDPR Hunter — cancelling background work…")
+            for runner in self._runners:
+                runner.request_stop()
+            self._close_timer.start()
+            return
+        self.geometrySaved.emit(self.width(), self.height())
+        super().closeEvent(event)
+
+    def _finish_close(self) -> None:
+        if self._closing and not any(runner.is_busy for runner in self._runners):
+            self._close_timer.stop()
+            self.close()

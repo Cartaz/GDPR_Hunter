@@ -11,11 +11,11 @@
     <aside class="sidebar" aria-label="Primary navigation">
       <div class="brand">GDPR <span>Hunter</span></div>
       <nav>
-        <button class="nav-item selected" type="button">Dashboard</button>
-        <button class="nav-item" type="button" disabled>Investigations</button>
+        <button class="nav-item selected" type="button" data-target="milestone">Dashboard</button>
+        <button class="nav-item" type="button" data-target="investigation-form">Investigations</button>
         <button class="nav-item" type="button" disabled>Exposures</button>
-        <button class="nav-item" type="button" disabled>Cases</button>
-        <button class="nav-item" type="button" disabled>Targets</button>
+        <button class="nav-item" type="button" data-target="case-list">Cases</button>
+        <button class="nav-item" type="button" data-target="target-form">Targets</button>
       </nav>
     </aside>
 
@@ -245,5 +245,17 @@
 
   <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
   <script type="module" src="js/app.js"></script>
+  <dialog id="approved-history-dialog" aria-labelledby="approved-history-title">
+    <h2 id="approved-history-title">Approved payload</h2>
+    <p id="approved-history-recipient"></p>
+    <p class="muted">Immutable historical copy. Viewing it does not recompose, approve or send a request.</p>
+    <div class="stack-form">
+      <label for="approved-history-subject">Subject</label>
+      <input id="approved-history-subject" readonly>
+      <label for="approved-history-body">Body</label>
+      <textarea id="approved-history-body" rows="18" readonly></textarea>
+    </div>
+    <form method="dialog"><button>Close</button></form>
+  </dialog>
 </body>
 </html>

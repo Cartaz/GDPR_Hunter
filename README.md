@@ -4,6 +4,8 @@ GDPR Hunter is a local-first desktop privacy application under active developmen
 
 ## Current status
 
+The September audit corrections are implemented on top of M21: atomic schema migrations and research persistence, all six Article 17 grounds, isolated response drafts, cancellable background operations, HTML-email analysis, historical payload access and explicit human Claim review. The current database schema is **v12**. See [the remediation report](docs/audit-remediation-2026-09.md) for the fifteen findings, regression coverage, migration behavior and remaining platform checks.
+
 Milestone **M21 — Response Intake** is implemented on the current development branch. GDPR Hunter can manually record controller correspondence against a submitted Case while it is awaiting a response, preserving the raw response locally without interpreting it or changing the Case outcome. **M21 is manual local intake: it does not read an inbox, verify delivery, classify GDPR compliance, or automatically complete a Case.**
 
 M8 introduced bounded OpenAI-compatible inference without tools or direct application authority. M9 added strict inert `CLAIM` and `RESEARCH_EVIDENCE` proposals. M10 added encrypted append-only outbound auditing. M11 added explicitly reviewed, atomic Claim acceptance. M12 connected bounded Investigation Evidence to inference and strict proposal parsing without mutation. M13 moved model analysis onto an owned Qt worker and wired configured inference into production. M14 added Python-owned opaque proposal identities and one-use Claim review. M15 added explicitly reviewed research-proposal execution while keeping outbound destinations under Python policy control. M16 added explicit controller-action jurisdiction and immutable deadline/calendar snapshots. M17 added deterministic local request composition for Articles 15, 17 and 21. M18 added encrypted append-only approved outbound payloads. M19 added reviewed default-mail-client handoff without claiming that opening a mail client proves transmission. M20 bound each confirmed submission to the exact immutable approved payload the user states was actually transmitted.
@@ -104,12 +106,13 @@ Supported GDPR Case workflows are Article 15 access/provenance, Article 17 erasu
 - `ArtifactAnalyzer` is deterministic and has no network authority
 - `ResearchService` owns bounded public-network mechanics behind `NetworkPolicy`
 - `EgressPolicy` owns outbound authorization; `OutboundAuditRepository` owns durable audit persistence
-- `ResearchRunner` owns Qt threading for both direct and reviewed model research
+- `ResearchRunner` owns Qt threading for local artifact analysis and both direct and reviewed model research
 - `InferenceEndpoint` and `InferenceService` own configured model-server transport and bounded JSON inference
 - `ModelProposalParser` validates untrusted model JSON into inert typed proposals
 - `ModelAnalysisService` owns bounded Evidence-to-proposal orchestration without mutation
 - `ModelAnalysisRunner` owns Qt threading for that orchestration
 - `ProposalReviewService` owns opaque proposal identities and one-use reviewed resolution
+- `ProposalReviewController` exposes review DTOs and semantic actions; `Bridge` handles Qt transport and scheduling
 - reviewed Claim acceptance and reviewed research execution remain explicit and separate from proposal generation
 
 ## Install
@@ -124,6 +127,28 @@ chmod +x install.sh
 ```bash
 .venv/bin/python main.py
 ```
+
+The desktop requires Qt WebEngine's native runtime libraries and an unlocked operating-system credential store (for example KDE Wallet through a supported keyring backend). Installation verifies imports and reports missing libraries; it does not change system packages or configure your keyring. The installer preserves an unusable virtual environment and can bootstrap a missing pip installation.
+
+## Configuration and archive recovery
+
+Settings are in `$XDG_CONFIG_HOME/gdpr-hunter/settings.json`, defaulting to `~/.config/gdpr-hunter/settings.json`. For a user-approved LAN server, use your server's base URL, not the `/models` page:
+
+```json
+{
+  "inference_endpoint": "http://192.168.1.50:8080",
+  "inference_location": "USER_APPROVED_LAN",
+  "inference_model": "default",
+  "window_width": 1280,
+  "window_height": 820
+}
+```
+
+Replace the example address/model with the configured server values. The client calls `/v1/chat/completions` and requests JSON output; every model action still requires explicit approval. Invalid settings recover to local defaults with a logged warning. Closing the window saves its size without overwriting malformed settings or changing the configured inference endpoint.
+
+The archive is under `$XDG_DATA_HOME/gdpr-hunter`, defaulting to `~/.local/share/gdpr-hunter`. Diagnostic logs rotate in its `logs/` directory. Before upgrading or moving machines, close the application and back up the database and `artifacts/` directory together. Preserve the original OS keyring entry: service `gdpr-hunter`, entry `master-encryption-key-v1`. Use the credential backend's supported secure backup/restore mechanism; do not paste the key into logs, issues or configuration files.
+
+An encrypted database backup alone is insufficient if its key is lost. If an archive exists but the keyring entry is missing, startup stops before migration and does not generate a replacement. Unlock or restore the original credential store. Restoring older code also requires a matching pre-upgrade database backup, because older versions reject newer schemas.
 
 ## Development validation
 

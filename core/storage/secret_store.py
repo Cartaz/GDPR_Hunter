@@ -17,10 +17,15 @@ class SecretStore:
     SERVICE_NAME = "gdpr-hunter"
     MASTER_KEY_NAME = "master-encryption-key-v1"
 
-    def get_or_create_master_key(self) -> bytes:
+    def get_or_create_master_key(self, *, allow_create: bool = True) -> bytes:
         try:
             encoded = keyring.get_password(self.SERVICE_NAME, self.MASTER_KEY_NAME)
             if encoded is None:
+                if not allow_create:
+                    raise SecretStoreUnavailable(
+                        "The archive already exists but its encryption key is missing. "
+                        "Unlock or restore the original operating-system keyring; a replacement key was not created."
+                    )
                 key = secrets.token_bytes(32)
                 encoded = base64.urlsafe_b64encode(key).decode("ascii")
                 keyring.set_password(self.SERVICE_NAME, self.MASTER_KEY_NAME, encoded)

@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import os
 
+from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+
+class StorageIntegrityError(RuntimeError):
+    """Encrypted data cannot be authenticated with the current archive key."""
 
 
 class SensitiveStore:
@@ -24,14 +29,22 @@ class SensitiveStore:
     def decrypt_bytes(self, payload: bytes) -> bytes:
         minimum_size = len(self.VERSION) + self.NONCE_SIZE + 16
         if len(payload) < minimum_size or not payload.startswith(self.VERSION):
-            raise ValueError("Unsupported or malformed encrypted payload")
+            raise StorageIntegrityError("Encrypted data is malformed; restore a verified backup")
         start = len(self.VERSION)
         nonce = payload[start : start + self.NONCE_SIZE]
         ciphertext = payload[start + self.NONCE_SIZE :]
-        return self._cipher.decrypt(nonce, ciphertext, self.VERSION)
+        try:
+            return self._cipher.decrypt(nonce, ciphertext, self.VERSION)
+        except InvalidTag as exc:
+            raise StorageIntegrityError(
+                "Encrypted data could not be authenticated. Check the archive key and backup; no data was changed."
+            ) from exc
 
     def encrypt_text(self, plaintext: str) -> bytes:
         return self.encrypt_bytes(plaintext.encode("utf-8"))
 
     def decrypt_text(self, payload: bytes) -> str:
-        return self.decrypt_bytes(payload).decode("utf-8")
+        try:
+            return self.decrypt_bytes(payload).decode("utf-8")
+        except UnicodeError as exc:
+            raise StorageIntegrityError("Encrypted text is malformed; restore a verified backup") from exc

@@ -198,7 +198,11 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .status { min-height: 24px; margin: 24px 4px 0; color: var(--muted); }
 .status.error { color: rgb(225, 135, 90); }
 
-@media (max-width: 1050px) {
+[hidden] { display: none !important; }
+dialog { width: min(850px, 90vw); max-height: 90vh; overflow: auto; }
+dialog::backdrop { background: #0009; }
+
+@media (max-width: 1200px) {
   .app-shell { grid-template-columns: 210px 1fr; }
   .metric-grid { grid-template-columns: 1fr; }
   .content-grid { grid-template-columns: 1fr; }

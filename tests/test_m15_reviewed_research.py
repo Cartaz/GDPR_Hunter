@@ -17,6 +17,7 @@ from core.application.egress_policy import (
 from core.application.identity_service import IdentityService
 from core.application.investigation_service import InvestigationService
 from core.application.network_policy import NetworkPolicy
+from core.application.proposal_review_controller import ProposalReviewController
 from core.application.proposal_review_service import ProposalReviewService
 from core.application.research_service import ResearchService, TransportResponse
 from core.domain.investigation import (
@@ -253,7 +254,7 @@ def test_bridge_executes_research_token_as_async_model_evidence_request(tmp_path
     bridge = Bridge(
         controller,  # type: ignore[arg-type]
         runner,
-        proposal_review_service=review,
+        proposal_review_service=ProposalReviewController(review),
     )
     completed = QSignalSpy(bridge.modelResearchCompleted)
     caller_thread_id = threading.get_ident()

@@ -6,6 +6,7 @@ import time
 from PySide6.QtCore import QCoreApplication, QObject, Signal
 from PySide6.QtTest import QSignalSpy
 
+from core.application.proposal_review_controller import ProposalReviewController
 from core.application.proposal_review_service import ReviewProposal
 from core.domain.model_proposal import ClaimProposal, ResearchEvidenceProposal
 from ui.bridge import Bridge
@@ -17,7 +18,7 @@ class FakeModelAnalysisService:
     def __init__(self) -> None:
         self.worker_thread_id: int | None = None
 
-    def propose(self, investigation_id: int, *, approved_by_user: bool):
+    def propose(self, investigation_id: int, *, approved_by_user: bool, cancel_requested=None):
         assert investigation_id == 7
         assert approved_by_user is True
         self.worker_thread_id = threading.get_ident()
@@ -104,7 +105,7 @@ def test_bridge_rejects_unapproved_or_busy_model_analysis() -> None:
         controller,
         research_runner,
         BusyModelRunner(),  # type: ignore[arg-type]
-        FakeReviewService(),  # type: ignore[arg-type]
+        ProposalReviewController(FakeReviewService()),  # type: ignore[arg-type]
     )
     busy = bridge_busy.analyzeInvestigationWithModel(7, True)
     assert busy["ok"] is False
@@ -121,7 +122,7 @@ def test_bridge_serializes_registered_model_proposals_without_mutation() -> None
         controller,
         research_runner,
         model_runner,  # type: ignore[arg-type]
-        FakeReviewService(),  # type: ignore[arg-type]
+        ProposalReviewController(FakeReviewService()),  # type: ignore[arg-type]
     )
     completed = QSignalSpy(bridge.modelAnalysisCompleted)
 

@@ -30,7 +30,8 @@ class ApprovedOutboundRequestRepository:
                     case_id, recipient_name, recipient_email_enc, subject_enc, body_enc,
                     legal_basis, identifier_ids_json, erasure_ground, approved_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
+                WHERE EXISTS (SELECT 1 FROM cases WHERE id = ? AND status = 'DRAFT')
                 """,
                 (
                     request.case_id,
@@ -42,8 +43,11 @@ class ApprovedOutboundRequestRepository:
                     identifier_ids_json,
                     request.erasure_ground.value if request.erasure_ground else None,
                     request.approved_at,
+                    request.case_id,
                 ),
             )
+            if cursor.rowcount != 1:
+                raise ValueError("Only a draft case can receive a new approved payload; the case changed")
             request_id = int(cursor.lastrowid)
             row = connection.execute(
                 "SELECT * FROM approved_outbound_requests WHERE id = ?",

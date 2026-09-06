@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import http.client
 import json
-import socket
 import ssl
 from collections.abc import Callable
 from dataclasses import dataclass
 from urllib.parse import quote, urljoin
 
+from core.application.bounded_network import (
+    CancellationCheck,
+    NetworkDeadline,
+    OperationCancelled,
+)
 from core.application.network_policy import (
     NetworkPolicy,
     NetworkPolicyError,
@@ -19,11 +23,7 @@ class ResearchError(RuntimeError):
     pass
 
 
-class ResearchCancelled(ResearchError):
-    pass
-
-
-CancellationCheck = Callable[[], bool]
+ResearchCancelled = OperationCancelled
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,7 +77,7 @@ class ResearchService:
         transport: Transport | None = None,
     ) -> None:
         self._network_policy = network_policy
-        self._transport = transport or self._request_pinned
+        self._transport = transport
 
     def fetch_public_document(
         self,
@@ -92,41 +92,46 @@ class ResearchService:
         redirects: list[RedirectHop] = []
         requested = current
 
-        for _ in range(self.MAX_REDIRECTS + 1):
-            self._raise_if_cancelled(cancel_requested)
-            try:
-                validated = self._network_policy.validate_public_url(current)
-            except NetworkPolicyError as exc:
-                raise ResearchError(str(exc)) from exc
+        with NetworkDeadline(self.TIMEOUT_SECONDS * (self.MAX_REDIRECTS + 1), cancel_requested) as deadline:
+            for _ in range(self.MAX_REDIRECTS + 1):
+                self._raise_if_cancelled(cancel_requested)
+                try:
+                    validated = self._network_policy.validate_public_url(current, deadline=deadline)
+                except NetworkPolicyError as exc:
+                    raise ResearchError(str(exc)) from exc
 
-            response = self._transport(validated, self.TIMEOUT_SECONDS, self.MAX_DOCUMENT_BYTES)
-            self._raise_if_cancelled(cancel_requested)
-            if len(response.body) > self.MAX_DOCUMENT_BYTES:
-                raise ResearchError("Research response exceeds size limit")
-            if response.status in self.REDIRECT_STATUSES:
-                location = response.headers.get("location")
-                if not location:
-                    raise ResearchError("Redirect response is missing Location header")
-                if len(redirects) >= self.MAX_REDIRECTS:
-                    raise ResearchError("Research redirect limit exceeded")
-                destination = urljoin(current, location)
-                redirects.append(RedirectHop(current, response.status, destination))
-                current = destination
-                continue
+                if self._transport is None:
+                    response = self._request_pinned(validated, self.MAX_DOCUMENT_BYTES, deadline)
+                else:
+                    response = self._transport(validated, self.TIMEOUT_SECONDS, self.MAX_DOCUMENT_BYTES)
+                deadline.check()
+                self._raise_if_cancelled(cancel_requested)
+                if len(response.body) > self.MAX_DOCUMENT_BYTES:
+                    raise ResearchError("Research response exceeds size limit")
+                if response.status in self.REDIRECT_STATUSES:
+                    location = response.headers.get("location")
+                    if not location:
+                        raise ResearchError("Redirect response is missing Location header")
+                    if len(redirects) >= self.MAX_REDIRECTS:
+                        raise ResearchError("Research redirect limit exceeded")
+                    destination = urljoin(current, location)
+                    redirects.append(RedirectHop(current, response.status, destination))
+                    current = destination
+                    continue
 
-            if not 200 <= response.status < 300:
-                raise ResearchError(f"Research request failed with HTTP {response.status}")
-            content_type = self._normalize_content_type(response.headers.get("content-type", ""))
-            if content_type not in self.ALLOWED_CONTENT_TYPES:
-                raise ResearchError("Research response content type is not allowed")
-            return ResearchDocument(
-                requested_url=requested,
-                final_url=current,
-                status=response.status,
-                content_type=content_type,
-                body=response.body,
-                redirects=tuple(redirects),
-            )
+                if not 200 <= response.status < 300:
+                    raise ResearchError(f"Research request failed with HTTP {response.status}")
+                content_type = self._normalize_content_type(response.headers.get("content-type", ""))
+                if content_type not in self.ALLOWED_CONTENT_TYPES:
+                    raise ResearchError("Research response content type is not allowed")
+                return ResearchDocument(
+                    requested_url=requested,
+                    final_url=current,
+                    status=response.status,
+                    content_type=content_type,
+                    body=response.body,
+                    redirects=tuple(redirects),
+                )
 
         raise ResearchError("Research redirect limit exceeded")
 
@@ -193,49 +198,37 @@ class ResearchService:
     @staticmethod
     def _request_pinned(
         validated: ValidatedPublicUrl,
-        timeout_seconds: int,
         max_bytes: int,
+        deadline: NetworkDeadline,
     ) -> TransportResponse:
-        last_error: OSError | http.client.HTTPException | None = None
-        for address in validated.addresses:
-            raw_socket: socket.socket | None = None
-            wrapped_socket: socket.socket | None = None
-            try:
-                raw_socket = socket.create_connection(
-                    (address, validated.port), timeout=timeout_seconds
+        try:
+            active_socket = deadline.connect(
+                (validated.hostname, validated.port), validated.addresses,
+            )
+            if validated.scheme == "https":
+                active_socket = deadline.wrap_tls(
+                    active_socket, ssl.create_default_context(), validated.hostname,
                 )
-                active_socket: socket.socket
-                if validated.scheme == "https":
-                    context = ssl.create_default_context()
-                    wrapped_socket = context.wrap_socket(
-                        raw_socket, server_hostname=validated.hostname
-                    )
-                    active_socket = wrapped_socket
-                else:
-                    active_socket = raw_socket
-
-                request = (
-                    f"GET {validated.request_target} HTTP/1.1\r\n"
-                    f"Host: {validated.hostname}\r\n"
-                    "User-Agent: GDPR-Hunter/0.1\r\n"
-                    "Accept: text/html,text/plain,application/json,application/rdap+json;q=0.9,*/*;q=0.1\r\n"
-                    "Connection: close\r\n\r\n"
-                ).encode("ascii")
-                active_socket.sendall(request)
-                response = http.client.HTTPResponse(active_socket)
+            request = (
+                f"GET {validated.request_target} HTTP/1.1\r\n"
+                f"Host: {validated.hostname}\r\n"
+                "User-Agent: GDPR-Hunter/0.1\r\n"
+                "Accept: text/html,text/plain,application/json,application/rdap+json;q=0.9,*/*;q=0.1\r\n"
+                "Connection: close\r\n\r\n"
+            ).encode("ascii")
+            active_socket.sendall(request)
+            response = http.client.HTTPResponse(active_socket)
+            try:
                 response.begin()
                 body = response.read(max_bytes + 1)
+                deadline.check()
                 if len(body) > max_bytes:
                     raise ResearchError("Research response exceeds size limit")
                 headers = {name.lower(): value for name, value in response.getheaders()}
                 return TransportResponse(response.status, headers, body)
-            except ResearchError:
-                raise
-            except (OSError, http.client.HTTPException) as exc:
-                last_error = exc
             finally:
-                if wrapped_socket is not None:
-                    wrapped_socket.close()
-                elif raw_socket is not None:
-                    raw_socket.close()
-        raise ResearchError("Research destination could not be reached") from last_error
+                response.close()
+                active_socket.close()
+        except (OSError, http.client.HTTPException) as exc:
+            deadline.check()
+            raise ResearchError("Research destination could not be reached") from exc

@@ -1,3 +1,5 @@
+import { createResponsePanel } from "./responses.js";
+
 const statusNode = document.getElementById("status");
 const milestoneNode = document.getElementById("milestone");
 const investigationCountNode = document.getElementById("investigation-count");
@@ -30,23 +32,6 @@ const requestPreviewBodyNode = document.getElementById("request-preview-body");
 const approveRequestButton = document.getElementById("approve-request-button");
 const timelineTitleNode = document.getElementById("timeline-title");
 const timelineListNode = document.getElementById("timeline-list");
-const responsePanelTitleNode = document.getElementById("response-panel-title");
-const responsePanelEmptyNode = document.getElementById("response-panel-empty");
-const responsePanelNode = document.getElementById("response-panel");
-const responseForm = document.getElementById("response-form");
-const responseChannelNode = document.getElementById("response-channel");
-const responseReceivedOnNode = document.getElementById("response-received-on");
-const responseSenderNode = document.getElementById("response-sender");
-const responseSubjectNode = document.getElementById("response-subject");
-const responseBodyNode = document.getElementById("response-body");
-const responseListNode = document.getElementById("response-list");
-const responseDetailTitleNode = document.getElementById("response-detail-title");
-const responseDetailEmptyNode = document.getElementById("response-detail-empty");
-const responseDetailNode = document.getElementById("response-detail");
-const responseDetailMetaNode = document.getElementById("response-detail-meta");
-const responseDetailSenderNode = document.getElementById("response-detail-sender");
-const responseDetailSubjectNode = document.getElementById("response-detail-subject");
-const responseDetailBodyNode = document.getElementById("response-detail-body");
 const investigationForm = document.getElementById("investigation-form");
 const investigationTitleNode = document.getElementById("investigation-title");
 const investigationListNode = document.getElementById("investigation-list");
@@ -70,10 +55,18 @@ let currentState = null;
 let currentRequestPreviewContext = null;
 let selectedInvestigationId = null;
 let selectedInvestigationDetail = null;
-let selectedResponseCaseId = null;
 let researchBusy = false;
 let activeModelInvestigationId = null;
+let historyGeneration = 0;
+let investigationGeneration = 0;
+let previewGeneration = 0;
+let timelineGeneration = 0;
+const submissionDrafts = new Map();
 const proposalViews = new Map();
+const responses = createResponsePanel({
+  getBackend: () => backend, getState: () => currentState,
+  targetName, setStatus, handleMutation, localDateString, makeButton, clearNode,
+});
 
 function setStatus(message, isError = false) {
   statusNode.textContent = message;
@@ -115,6 +108,7 @@ function selectedIdentifierIds() {
 }
 
 function clearRequestPreview() {
+  previewGeneration += 1;
   currentRequestPreviewContext = null;
   requestPreviewNode.hidden = true;
   requestPreviewTitleNode.textContent = "Request preview";
@@ -164,6 +158,7 @@ function renderIdentityIdentifiers(identifiers) {
 }
 
 function renderRequestIdentifierOptions(identifiers) {
+  const selected = new Set(selectedIdentifierIds());
   clearNode(requestIdentifierOptionsNode);
   if (!identifiers.length) {
     const empty = document.createElement("p");
@@ -178,6 +173,7 @@ function renderRequestIdentifierOptions(identifiers) {
     const checkbox = document.createElement("input");
     checkbox.type = "checkbox";
     checkbox.dataset.identifierId = String(identifier.id);
+    checkbox.checked = selected.has(identifier.id);
     checkbox.addEventListener("change", clearRequestPreview);
     const text = document.createElement("span");
     text.textContent = identifier.label
@@ -212,15 +208,9 @@ function renderInvestigations(investigations) {
 }
 
 function analyzeArtifact(artifactId) {
-  if (!backend || !selectedInvestigationId) return;
+  if (!backend || !selectedInvestigationId || researchBusy) return;
   backend.analyzeArtifact(selectedInvestigationId, artifactId, (response) => {
-    if (response?.ok) {
-      const count = response.result?.createdCount ?? 0;
-      setStatus(count ? `${count} deterministic evidence item(s) extracted.` : "Artifact already fully analyzed or no supported findings found.");
-      loadInvestigation(selectedInvestigationId);
-    } else if (response?.error?.message) {
-      setStatus(response.error.message, true);
-    }
+    if (response?.error) setStatus(response.error.message, true);
   });
 }
 
@@ -393,7 +383,8 @@ function renderInvestigationDetail(detail) {
     const row = document.createElement("div");
     row.className = "timeline-event";
     const title = document.createElement("strong");
-    title.textContent = `Claim #${claim.id} · ${claim.status}`;
+    const legacyReview = ["CORROBORATED", "VERIFIED"].includes(claim.status) && !claim.humanReviewed;
+    title.textContent = `Claim #${claim.id} · ${claim.status}${legacyReview ? " · historical status, human review not recorded" : ""}`;
     const statement = document.createElement("small");
     statement.textContent = `${claim.provenance} · ${claim.statement}`;
     row.append(title, statement);
@@ -403,7 +394,9 @@ function renderInvestigationDetail(detail) {
 
 function loadInvestigation(investigationId) {
   if (!backend) return;
+  const generation = ++investigationGeneration;
   backend.getInvestigationDetail(investigationId, (response) => {
+    if (generation !== investigationGeneration) return;
     if (response?.error) {
       setStatus(response.error.message, true);
       return;
@@ -484,6 +477,7 @@ function makeDateAction(label, action) {
   const input = document.createElement("input");
   input.type = "date";
   input.value = localDateString();
+  input.setAttribute("aria-label", `${label} date`);
   const button = makeButton(label, () => action(input.value));
   wrapper.append(input, button);
   return wrapper;
@@ -506,91 +500,32 @@ function makeSubmissionAction(caseId, approvals) {
   input.type = "date";
   input.value = localDateString();
   input.setAttribute("aria-label", `Controller receipt date for Case #${caseId}`);
+  const previous = submissionDrafts.get(caseId);
+  if (previous && approvals.some((item) => item.id === previous.approvalId)) selector.value = String(previous.approvalId);
+  if (previous?.receivedOn) input.value = previous.receivedOn;
+  const saveSelection = () => submissionDrafts.set(caseId, { approvalId: Number(selector.value), receivedOn: input.value });
+  selector.addEventListener("change", saveSelection);
+  input.addEventListener("change", saveSelection);
 
   const button = makeButton("Confirm sent payload", () => {
     submitCase(caseId, Number(selector.value), input.value);
   });
-  wrapper.append(selector, input, button);
+  wrapper.append(selector, makeButton("View selected payload", () => viewApprovedRequest(caseId, Number(selector.value))), input, button);
   return wrapper;
 }
 
-function clearResponseDetail() {
-  responseDetailTitleNode.textContent = "No response selected";
-  responseDetailEmptyNode.hidden = false;
-  responseDetailNode.hidden = true;
-  responseDetailMetaNode.textContent = "";
-  responseDetailSenderNode.value = "";
-  responseDetailSubjectNode.value = "";
-  responseDetailBodyNode.value = "";
-}
-
-function renderCaseResponseDetail(response) {
-  responseDetailTitleNode.textContent = `Response #${response.id}`;
-  responseDetailEmptyNode.hidden = true;
-  responseDetailNode.hidden = false;
-  responseDetailMetaNode.textContent = `${response.channel} · received ${response.receivedOn} · recorded ${response.recordedAt}`;
-  responseDetailSenderNode.value = response.sender ?? "";
-  responseDetailSubjectNode.value = response.subject ?? "";
-  responseDetailBodyNode.value = response.body;
-}
-
-function openCaseResponse(responseId) {
+function viewApprovedRequest(caseId, approvedId) {
   if (!backend) return;
-  backend.getCaseResponse(responseId, (response) => {
-    if (response?.error) {
-      setStatus(response.error.message, true);
-      return;
-    }
-    renderCaseResponseDetail(response);
-  });
-}
-
-function renderCaseResponseSummaries(caseId, summaries) {
-  clearNode(responseListNode);
-  if (!summaries.length) {
-    const empty = document.createElement("p");
-    empty.className = "muted empty-state";
-    empty.textContent = "No controller responses recorded for this Case.";
-    responseListNode.appendChild(empty);
-    return;
-  }
-  for (const summary of summaries) {
-    const row = document.createElement("div");
-    row.className = "record";
-    const info = document.createElement("div");
-    const title = document.createElement("strong");
-    title.textContent = `Response #${summary.id} · ${summary.channel}`;
-    const detail = document.createElement("small");
-    detail.textContent = `Received ${summary.receivedOn} · recorded ${summary.recordedAt}`;
-    info.append(title, detail);
-    row.append(info, makeButton("Open", () => openCaseResponse(summary.id)));
-    responseListNode.appendChild(row);
-  }
-}
-
-function loadCaseResponses(caseId) {
-  if (!backend) return;
-  const caseItem = currentState?.cases?.find((item) => item.id === caseId);
-  if (!caseItem || !caseItem.receivedOn) {
-    selectedResponseCaseId = null;
-    responsePanelTitleNode.textContent = "Select a submitted case";
-    responsePanelEmptyNode.hidden = false;
-    responsePanelNode.hidden = true;
-    clearResponseDetail();
-    return;
-  }
-  selectedResponseCaseId = caseId;
-  responsePanelTitleNode.textContent = `Case #${caseId} · ${targetName(caseItem.targetId)}`;
-  responsePanelEmptyNode.hidden = true;
-  responsePanelNode.hidden = false;
-  responseForm.hidden = caseItem.status !== "AWAITING_RESPONSE";
-  if (!responseReceivedOnNode.value) responseReceivedOnNode.value = localDateString();
-  backend.listCaseResponses(caseId, (response) => {
-    if (response?.error) {
-      setStatus(response.error.message, true);
-      return;
-    }
-    renderCaseResponseSummaries(caseId, response);
+  const generation = ++historyGeneration;
+  backend.getApprovedRequest(approvedId, (response) => {
+    if (generation !== historyGeneration) return;
+    if (response?.error) return setStatus(response.error.message, true);
+    if (response.caseId !== caseId || response.id !== approvedId) return;
+    document.getElementById("approved-history-title").textContent = `Case #${caseId} · Approved payload #${approvedId} · ${response.approvedAt}`;
+    document.getElementById("approved-history-recipient").textContent = `To: ${response.recipientName} <${response.recipientEmail}>`;
+    document.getElementById("approved-history-subject").value = response.subject;
+    document.getElementById("approved-history-body").value = response.body;
+    document.getElementById("approved-history-dialog").showModal();
   });
 }
 
@@ -603,7 +538,9 @@ function previewCaseRequest(caseItem) {
     return;
   }
   const identifierIds = selectedIdentifierIds();
+  const generation = ++previewGeneration;
   backend.previewCaseRequest(caseItem.id, erasureGround, identifierIds, (response) => {
+    if (generation !== previewGeneration) return;
     if (response?.error) {
       setStatus(response.error.message, true);
       clearRequestPreview();
@@ -729,7 +666,12 @@ function renderCases(cases) {
       );
     }
     if (caseItem.receivedOn) {
-      actions.appendChild(makeButton("Responses", () => loadCaseResponses(caseItem.id)));
+      actions.appendChild(makeButton("Responses", () => responses.open(caseItem.id)));
+    }
+    if (caseItem.status !== "DRAFT") {
+      for (const historical of approvals) {
+        actions.appendChild(makeButton(`View payload #${historical.id}`, () => viewApprovedRequest(caseItem.id, historical.id)));
+      }
     }
     actions.appendChild(makeButton("Timeline", () => loadTimeline(caseItem.id)));
     if (caseItem.status === "DRAFT" && caseItem.right !== "UNSPECIFIED") {
@@ -748,13 +690,16 @@ function renderCases(cases) {
 }
 
 function renderState(state) {
+  if (state?.error) return setStatus(state.error.message, true);
+  if (!state || typeof state !== "object") return setStatus("Invalid application state.", true);
+  const requestInputs = (value) => JSON.stringify([value?.identity, value?.targets, value?.cases]);
+  if (requestInputs(state) !== requestInputs(currentState)) clearRequestPreview();
+  if (state.identity?.displayName !== currentState?.identity?.displayName) displayNameNode.value = state.identity?.displayName ?? "";
   currentState = state;
   milestoneNode.textContent = state.milestone ?? "M21";
   investigationCountNode.textContent = String(state.investigations?.length ?? 0);
   targetCountNode.textContent = String(state.targets?.length ?? 0);
   caseCountNode.textContent = String(state.cases?.length ?? 0);
-  displayNameNode.value = state.identity?.displayName ?? "";
-  clearRequestPreview();
   renderIdentityIdentifiers(state.identity?.identifiers ?? []);
   renderRequestIdentifierOptions(state.identity?.identifiers ?? []);
   renderInvestigations(state.investigations ?? []);
@@ -763,11 +708,11 @@ function renderState(state) {
   renderTargets(state.targets ?? []);
   renderCases(state.cases ?? []);
   if (selectedInvestigationId) loadInvestigation(selectedInvestigationId);
-  if (selectedResponseCaseId) loadCaseResponses(selectedResponseCaseId);
+  responses.refresh();
 }
 
 function handleMutation(response, successMessage) {
-  if (response?.ok) setStatus(successMessage);
+  if (response?.ok) setStatus(response.warning ?? successMessage, Boolean(response.warning));
   else if (response?.error?.message) setStatus(response.error.message, true);
 }
 
@@ -829,7 +774,9 @@ function eventTitle(event) {
 
 function loadTimeline(caseId) {
   if (!backend) return;
+  const generation = ++timelineGeneration;
   backend.getCaseTimeline(caseId, (response) => {
+    if (generation !== timelineGeneration) return;
     if (response?.error) {
       setStatus(response.error.message, true);
       return;
@@ -859,6 +806,19 @@ function connectBackend() {
     backend.getBootstrapState((state) => renderState(state));
     backend.stateChanged.connect((state) => renderState(state));
     backend.operationFailed.connect((_code, message) => setStatus(message, true));
+    backend.artifactAnalysisStarted.connect((_investigationId, artifactId) => {
+      researchBusy = true;
+      setStatus(`Analyzing artifact #${artifactId} locally…`);
+    });
+    backend.artifactAnalysisCompleted.connect((investigationId, _artifactId, result) => {
+      researchBusy = false;
+      setStatus(`${result?.createdCount ?? 0} deterministic evidence item(s) extracted.`);
+      if (selectedInvestigationId === investigationId) loadInvestigation(investigationId);
+    });
+    backend.artifactAnalysisFailed.connect((_investigationId, _artifactId, _code, message) => {
+      researchBusy = false;
+      setStatus(message, true);
+    });
     backend.researchStarted.connect((_investigationId, artifactId) => {
       researchBusy = true;
       setStatus(`Researching public URLs from artifact #${artifactId}…`);
@@ -955,34 +915,6 @@ targetForm.addEventListener("submit", (event) => {
   });
 });
 
-responseForm.addEventListener("submit", (event) => {
-  event.preventDefault();
-  if (!backend || !selectedResponseCaseId) return;
-  const confirmed = window.confirm(
-    "Record this controller response exactly as entered? Sensitive response content will be encrypted locally. This does not classify compliance, alter the deadline, or complete the Case.",
-  );
-  if (!confirmed) return;
-  backend.recordCaseResponse(
-    selectedResponseCaseId,
-    responseChannelNode.value,
-    responseReceivedOnNode.value,
-    responseSenderNode.value,
-    responseSubjectNode.value,
-    responseBodyNode.value,
-    confirmed,
-    (response) => {
-      handleMutation(response, "Controller response encrypted and recorded locally.");
-      if (response?.ok) {
-        responseForm.reset();
-        responseChannelNode.value = "EMAIL";
-        responseReceivedOnNode.value = localDateString();
-        clearResponseDetail();
-        loadCaseResponses(selectedResponseCaseId);
-      }
-    },
-  );
-});
-
 investigationForm.addEventListener("submit", (event) => {
   event.preventDefault();
   if (!backend) return;
@@ -1011,11 +943,8 @@ artifactForm.addEventListener("submit", (event) => {
 evidenceForm.addEventListener("submit", (event) => {
   event.preventDefault();
   if (!backend || !selectedInvestigationId) return;
-  const artifacts = selectedInvestigationDetail?.artifacts ?? [];
-  const artifactId = artifacts.length ? artifacts[artifacts.length - 1].id : 0;
   backend.addUserEvidence(
     selectedInvestigationId,
-    artifactId,
     evidenceValueNode.value,
     evidenceLocatorNode.value,
     (response) => {
@@ -1039,5 +968,12 @@ claimForm.addEventListener("submit", (event) => {
     }
   });
 });
+
+for (const button of document.querySelectorAll("nav [data-target]")) {
+  button.addEventListener("click", () => {
+    document.getElementById(button.dataset.target)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    for (const item of document.querySelectorAll("nav button")) item.classList.toggle("selected", item === button);
+  });
+}
 
 connectBackend();

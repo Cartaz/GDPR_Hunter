@@ -61,9 +61,9 @@ class ModelProposalParser:
         confidence = item["confidence"]
         if isinstance(confidence, bool) or not isinstance(confidence, (int, float)):
             raise ModelProposalValidationError("confidence must be numeric")
-        numeric_confidence = float(confidence)
-        if numeric_confidence < 0.0 or numeric_confidence > 1.0:
+        if not 0.0 <= confidence <= 1.0:
             raise ModelProposalValidationError("confidence must be between 0 and 1")
+        numeric_confidence = float(confidence)
         return ClaimProposal(statement, evidence_ids, numeric_confidence)
 
     def _parse_research(

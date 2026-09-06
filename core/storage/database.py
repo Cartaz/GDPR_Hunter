@@ -17,7 +17,7 @@ class UnsupportedSchemaVersion(DatabaseSchemaError):
 class Database:
     """Own SQLite connection setup, lifecycle, schema compatibility, migrations, and transactions."""
 
-    CURRENT_SCHEMA_VERSION = 10
+    CURRENT_SCHEMA_VERSION = 12
 
     def __init__(self, path: Path) -> None:
         self._path = path
@@ -31,6 +31,7 @@ class Database:
         with self.connection_scope() as connection:
             existing_version = self._existing_schema_version(connection)
             if existing_version is None:
+                connection.execute("BEGIN IMMEDIATE")
                 self._create_current_schema(connection)
                 return
             if existing_version > self.CURRENT_SCHEMA_VERSION:
@@ -43,7 +44,21 @@ class Database:
 
             version = existing_version
             while version < self.CURRENT_SCHEMA_VERSION:
-                version = self._migrate(connection, version)
+                # SQLite's legacy transaction mode does not BEGIN for DDL.
+                # The v11 table rebuild follows SQLite's documented procedure:
+                # disable FK enforcement outside the transaction, then validate
+                # every reference before committing and re-enable enforcement.
+                rebuilding = version == 10
+                if rebuilding:
+                    connection.execute("PRAGMA foreign_keys = OFF")
+                try:
+                    connection.execute("BEGIN IMMEDIATE")
+                    version = self._migrate(connection, version)
+                finally:
+                    if connection.in_transaction:
+                        connection.rollback()
+                    if rebuilding:
+                        connection.execute("PRAGMA foreign_keys = ON")
 
     def connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self._path)
@@ -66,6 +81,7 @@ class Database:
     @contextmanager
     def transaction(self) -> Iterator[sqlite3.Connection]:
         with self.connection_scope() as connection, connection:
+            connection.execute("BEGIN IMMEDIATE")
             yield connection
 
     def _create_current_schema(self, connection: sqlite3.Connection) -> None:
@@ -113,6 +129,7 @@ class Database:
             self._create_outbound_delivery_event_schema_v8(connection)
             self._create_case_submission_binding_schema_v9(connection)
             self._create_case_response_schema_v10(connection)
+            self._create_claim_reviews_schema_v12(connection)
             connection.execute(
                 """
                 INSERT INTO schema_meta(id, schema_version, created_at, last_migrated_at)
@@ -163,7 +180,61 @@ class Database:
                 self._create_case_response_schema_v10(connection)
                 self._set_schema_version(connection, expected=9, target=10)
             return 10
+        if from_version == 10:
+            with connection:
+                statements = self._approved_outbound_request_statements()
+                connection.execute(statements[0].replace(
+                    "approved_outbound_requests", "approved_outbound_requests_v11"
+                ))
+                connection.execute("""
+                    INSERT INTO approved_outbound_requests_v11
+                    SELECT id, case_id, recipient_name, recipient_email_enc,
+                           subject_enc, body_enc, legal_basis, identifier_ids_json,
+                           CASE erasure_ground
+                               WHEN 'WITHDRAWN_CONSENT' THEN 'CONSENT_WITHDRAWN'
+                               WHEN 'OBJECTION_NO_OVERRIDE' THEN 'OBJECTION'
+                               WHEN 'CHILD_INFORMATION_SOCIETY'
+                                   THEN 'CHILD_INFORMATION_SOCIETY_SERVICES'
+                               ELSE erasure_ground
+                           END,
+                           approved_at
+                    FROM approved_outbound_requests
+                """)
+                connection.execute("DROP TABLE approved_outbound_requests")
+                connection.execute(
+                    "ALTER TABLE approved_outbound_requests_v11 RENAME TO approved_outbound_requests"
+                )
+                for statement in statements[1:]:
+                    connection.execute(statement)
+                if connection.execute("PRAGMA foreign_key_check").fetchone() is not None:
+                    raise DatabaseSchemaError("Foreign key violation during approval migration")
+                self._set_schema_version(connection, expected=10, target=11)
+            return 11
+        if from_version == 11:
+            with connection:
+                self._create_claim_reviews_schema_v12(connection)
+                self._set_schema_version(connection, expected=11, target=12)
+            return 12
         raise UnsupportedSchemaVersion(f"No migration path from database schema version {from_version}")
+
+    @staticmethod
+    def _create_claim_reviews_schema_v12(connection: sqlite3.Connection) -> None:
+        connection.execute("""
+            CREATE TABLE claim_reviews (
+                id INTEGER PRIMARY KEY,
+                claim_id INTEGER NOT NULL REFERENCES claims(id) ON DELETE RESTRICT,
+                target_status TEXT NOT NULL CHECK (target_status IN ('CORROBORATED', 'VERIFIED')),
+                note_enc BLOB NOT NULL,
+                created_at TEXT NOT NULL
+            )
+        """)
+        connection.execute("CREATE INDEX idx_claim_reviews_claim ON claim_reviews(claim_id, id)")
+        for action in ("UPDATE", "DELETE"):
+            connection.execute(f"""
+                CREATE TRIGGER claim_reviews_no_{action.lower()}
+                BEFORE {action} ON claim_reviews
+                BEGIN SELECT RAISE(ABORT, 'claim reviews are append-only'); END
+            """)
 
     @staticmethod
     def _set_schema_version(connection: sqlite3.Connection, expected: int, target: int) -> None:
@@ -497,7 +568,12 @@ class Database:
 
     @staticmethod
     def _create_approved_outbound_request_schema_v7(connection: sqlite3.Connection) -> None:
-        statements = (
+        for statement in Database._approved_outbound_request_statements():
+            connection.execute(statement)
+
+    @staticmethod
+    def _approved_outbound_request_statements() -> tuple[str, ...]:
+        return (
             """
             CREATE TABLE approved_outbound_requests (
                 id INTEGER PRIMARY KEY,
@@ -510,8 +586,8 @@ class Database:
                 identifier_ids_json TEXT NOT NULL,
                 erasure_ground TEXT CHECK (
                     erasure_ground IS NULL OR erasure_ground IN (
-                        'NO_LONGER_NECESSARY', 'WITHDRAWN_CONSENT', 'OBJECTION_NO_OVERRIDE',
-                        'UNLAWFUL_PROCESSING', 'LEGAL_OBLIGATION', 'CHILD_INFORMATION_SOCIETY'
+                        'NO_LONGER_NECESSARY', 'CONSENT_WITHDRAWN', 'OBJECTION',
+                        'UNLAWFUL_PROCESSING', 'LEGAL_OBLIGATION', 'CHILD_INFORMATION_SOCIETY_SERVICES'
                     )
                 ),
                 approved_at TEXT NOT NULL
@@ -533,9 +609,6 @@ class Database:
             END
             """,
         )
-        for statement in statements:
-            connection.execute(statement)
-
     @staticmethod
     def _create_outbound_delivery_event_schema_v8(connection: sqlite3.Connection) -> None:
         statements = (

@@ -160,6 +160,7 @@ def test_v8_migration_does_not_invent_binding_for_historical_submission(tmp_path
         connection.execute("DROP TRIGGER case_submission_bindings_no_update")
         connection.execute("DROP TRIGGER case_submission_bindings_no_delete")
         connection.execute("DROP TABLE case_submission_bindings")
+        connection.execute("DROP TABLE claim_reviews")
         connection.execute("UPDATE schema_meta SET schema_version = 8 WHERE id = 1")
 
     Database(database_path).initialize()

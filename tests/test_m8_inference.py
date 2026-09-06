@@ -28,7 +28,7 @@ class FakeConnection:
     }
     last_request: tuple[str, str, bytes, dict[str, str]] | None = None
 
-    def __init__(self, host: str, *, port: int | None, timeout: float) -> None:
+    def __init__(self, host: str, *, port: int | None, timeout: float, deadline) -> None:
         assert host == "127.0.0.1"
         assert port == 8080
         assert timeout == 120.0
