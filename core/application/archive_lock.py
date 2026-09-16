@@ -5,6 +5,7 @@ from __future__ import annotations
 import errno
 import os
 from pathlib import Path
+from typing import Self
 
 
 class ArchiveBusy(RuntimeError):
@@ -16,7 +17,7 @@ class ArchiveLock:
         self._path = data_dir.parent / f".{data_dir.name}.lock"
         self._descriptor: int | None = None
 
-    def __enter__(self) -> ArchiveLock:
+    def __enter__(self) -> Self:
         if self._descriptor is not None:
             raise RuntimeError("Archive lock already held")
         self._path.parent.mkdir(parents=True, exist_ok=True)
