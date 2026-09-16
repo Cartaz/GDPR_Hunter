@@ -230,7 +230,7 @@ def test_frontend_handoff_can_supply_only_approved_request_id_and_approval() -> 
 
     root = Path(__file__).resolve().parents[1]
     bridge = (root / "ui" / "bridge.py").read_text(encoding="utf-8")
-    javascript = (root / "ui" / "web" / "js" / "app.js").read_text(encoding="utf-8")
+    javascript = (root / "ui" / "web" / "js" / "case_workflow.js").read_text(encoding="utf-8")
 
     handoff_slot = bridge.split("def handoffApprovedRequest", 1)[1].split("def submitCase", 1)[0]
     assert "approved_request_id: int" in handoff_slot
