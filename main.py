@@ -40,7 +40,11 @@ from core.storage.delivery_event_repository import DeliveryEventRepository
 from core.storage.identity_repository import IdentityRepository
 from core.storage.investigation_repository import InvestigationRepository
 from core.storage.outbound_audit_repository import OutboundAuditRepository
-from core.storage.secret_store import ExistingArchiveKeyMissing, SecretStore, SecretStoreUnavailable
+from core.storage.secret_store import (
+    ExistingArchiveKeyMissing,
+    SecretStore,
+    SecretStoreUnavailable,
+)
 from core.storage.sensitive_store import SensitiveStore
 from core.storage.target_repository import TargetRepository
 from ui.bridge import Bridge
