@@ -40,7 +40,11 @@ from core.storage.delivery_event_repository import DeliveryEventRepository
 from core.storage.identity_repository import IdentityRepository
 from core.storage.investigation_repository import InvestigationRepository
 from core.storage.outbound_audit_repository import OutboundAuditRepository
-from core.storage.secret_store import SecretStore, SecretStoreUnavailable
+from core.storage.secret_store import (
+    ExistingArchiveKeyMissing,
+    SecretStore,
+    SecretStoreUnavailable,
+)
 from core.storage.sensitive_store import SensitiveStore
 from core.storage.target_repository import TargetRepository
 from ui.bridge import Bridge
@@ -88,11 +92,14 @@ def build_controller() -> tuple[
     paths = default_app_paths()
     settings = SettingsStore(paths.settings_path).load()
 
+    # Decide whether key creation is safe before SQLite can create or migrate an
+    # archive. Artifact files also require the original key if the DB is missing.
+    archive_exists = paths.database_path.exists() or paths.artifacts_dir.exists()
+    master_key = SecretStore().get_or_create_master_key(create_if_missing=not archive_exists)
+    sensitive_store = SensitiveStore(master_key)
+
     database = Database(paths.database_path)
     database.initialize()
-
-    master_key = SecretStore().get_or_create_master_key()
-    sensitive_store = SensitiveStore(master_key)
 
     identity_service = IdentityService(IdentityRepository(database, sensitive_store))
     target_service = TargetService(TargetRepository(database))
@@ -161,6 +168,16 @@ def main() -> int:
 
     try:
         controller, model_analysis_service, proposal_review_service, settings = build_controller()
+    except ExistingArchiveKeyMissing:
+        _LOG.critical("Existing archive encryption key is missing", exc_info=True)
+        QMessageBox.critical(
+            None,
+            "GDPR Hunter",
+            "Existing GDPR Hunter data was found, but its encryption key is missing. "
+            "Restore the original operating-system credential-store key before opening the archive. "
+            "No replacement key was created and the archive was not modified.",
+        )
+        return 1
     except SecretStoreUnavailable:
         _LOG.critical("Secure credential store unavailable", exc_info=True)
         QMessageBox.critical(
