@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import sqlite3
+import stat
+import zipfile
 from pathlib import Path
 
 import pytest
 
 from core.application.archive_lock import ArchiveBusy, ArchiveLock
 from core.application.paths import AppPaths
+from core.storage import archive_recovery as recovery
 from core.storage.archive_recovery import ArchiveError, create_backup, restore_backup
 from core.storage.artifact_store import ArtifactStore
 from core.storage.database import Database
@@ -198,21 +202,38 @@ def test_failed_restore_is_retryable_without_erasing_matching_key(tmp_path, cred
     _, package, _ = _backup(tmp_path, credential_store)
     credential_store.clear()
     target = _paths(tmp_path, "restored")
-    original_rename = Path.rename
+    original_install = recovery._install_directory_no_replace
 
-    def interrupted_rename(path, destination):
-        if path.name.startswith(".gdpr-restore-"):
-            raise OSError("simulated interruption")
-        return original_rename(path, destination)
+    def interrupted_install(staging, destination):
+        raise OSError("simulated interruption")
 
-    monkeypatch.setattr(Path, "rename", interrupted_rename)
+    monkeypatch.setattr(recovery, "_install_directory_no_replace", interrupted_install)
     with pytest.raises(OSError, match="simulated interruption"):
         restore_backup(target, package, PASSWORD)
     assert not target.data_dir.exists()
     assert SecretStore().get_existing_master_key() == KEY
-    monkeypatch.setattr(Path, "rename", original_rename)
+    monkeypatch.setattr(recovery, "_install_directory_no_replace", original_install)
     restore_backup(target, package, PASSWORD)
     assert target.database_path.exists()
+
+
+def test_raced_restore_destination_cannot_be_replaced(tmp_path, credential_store, monkeypatch):
+    _, package, _ = _backup(tmp_path, credential_store)
+    credential_store.clear()
+    target = _paths(tmp_path, "restored")
+    original_install = recovery._install_directory_no_replace
+
+    def raced_install(staging, destination):
+        destination.mkdir()
+        (destination / "important.txt").write_text("keep", encoding="utf-8")
+        original_install(staging, destination)
+
+    monkeypatch.setattr(recovery, "_install_directory_no_replace", raced_install)
+    with pytest.raises(ArchiveError, match="no data was overwritten"):
+        restore_backup(target, package, PASSWORD)
+    assert (target.data_dir / "important.txt").read_text(encoding="utf-8") == "keep"
+    assert not target.database_path.exists()
+    assert not list(tmp_path.glob(".gdpr-restore-*"))
 
 
 def test_empty_legacy_archive_does_not_blindly_accept_any_key(tmp_path, credential_store):
@@ -246,3 +267,45 @@ def test_sqlite_wal_rows_are_included_in_consistent_snapshot(tmp_path, credentia
     with Database(target.database_path).connection_scope() as connection:
         row = connection.execute("SELECT value_enc FROM identifiers").fetchone()
     assert SensitiveStore(KEY).decrypt_text(row[0]) == "wal-only@example.com"
+
+
+def _forged_internal_zip(members: list[tuple[str, bytes, int | None]]) -> bytes:
+    stream = io.BytesIO()
+    with zipfile.ZipFile(stream, "w", compression=zipfile.ZIP_STORED) as archive:
+        for name, value, file_type in members:
+            info = zipfile.ZipInfo(name)
+            if file_type is not None:
+                info.external_attr = (file_type | 0o600) << 16
+            archive.writestr(info, value)
+    return stream.getvalue()
+
+
+@pytest.mark.parametrize("unsafe_name", ["../escape", "artifacts/../escape", "/absolute/path"])
+def test_internal_zip_rejects_unsafe_member_paths(unsafe_name):
+    payload = _forged_internal_zip(
+        [(recovery.MANIFEST_MEMBER, b"{}", None), (recovery.KEY_MEMBER, KEY, None),
+         (recovery.DB_MEMBER, b"sqlite", None), (unsafe_name, b"bad", None)]
+    )
+    with pytest.raises(ArchiveError, match="unsafe archive member"):
+        recovery._read_plaintext(payload)
+
+
+def test_internal_zip_rejects_symlink_member():
+    name = "artifacts/aa/" + "b" * 30 + ".dat"
+    payload = _forged_internal_zip(
+        [(recovery.MANIFEST_MEMBER, b"{}", None), (recovery.KEY_MEMBER, KEY, None),
+         (recovery.DB_MEMBER, b"sqlite", None), (name, b"bad", stat.S_IFLNK)]
+    )
+    with pytest.raises(ArchiveError, match="unsafe archive member"):
+        recovery._read_plaintext(payload)
+
+
+def test_internal_zip_total_member_sizes_are_bounded(monkeypatch):
+    monkeypatch.setattr(recovery, "MAX_BYTES", 8192)
+    name = "artifacts/aa/" + "b" * 30 + ".dat"
+    payload = _forged_internal_zip(
+        [(recovery.MANIFEST_MEMBER, b"{}", None), (recovery.KEY_MEMBER, KEY, None),
+         (recovery.DB_MEMBER, b"a" * 5000, None), (name, b"b" * 5000, None)]
+    )
+    with pytest.raises(ArchiveError, match="oversized"):
+        recovery._read_plaintext(payload)
