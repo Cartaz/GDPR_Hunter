@@ -14,6 +14,10 @@ htmlcov/
 *.log
 artifacts/
 eval-results/
+*.ghbackup
+*.ghbackup.*
+.gdpr-recovery-*
+.gdpr-restore-*
 
 # Local secrets/config overrides
 .env

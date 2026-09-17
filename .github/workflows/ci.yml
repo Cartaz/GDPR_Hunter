@@ -34,10 +34,10 @@ jobs:
           ./install.sh
 
       - name: Compile
-        run: .venv/bin/python -m compileall -q main.py config core ui tests
+        run: .venv/bin/python -m compileall -q main.py archive_tool.py config core ui tests
 
       - name: Ruff
-        run: .venv/bin/ruff check main.py config core ui tests
+        run: .venv/bin/ruff check main.py archive_tool.py config core ui tests
 
       - name: Pytest
         run: .venv/bin/python -m pytest

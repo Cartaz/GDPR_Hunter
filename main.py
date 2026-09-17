@@ -9,6 +9,7 @@ from PySide6.QtWidgets import QApplication, QMessageBox
 
 from config.settings import AppSettings, SettingsStore
 from core.application.app_controller import AppController
+from core.application.archive_lock import ArchiveBusy, ArchiveLock
 from core.application.artifact_analyzer import ArtifactAnalyzer
 from core.application.case_service import CaseService
 from core.application.deadline_engine import DeadlineEngine
@@ -161,11 +162,7 @@ def build_controller() -> tuple[
     )
 
 
-def main() -> int:
-    configure_logging()
-    application = QApplication(sys.argv)
-    application.setApplicationName("GDPR Hunter")
-
+def _run_application(application: QApplication) -> int:
     try:
         controller, model_analysis_service, proposal_review_service, settings = build_controller()
     except ExistingArchiveKeyMissing:
@@ -209,6 +206,28 @@ def main() -> int:
     )
     window.show()
     return application.exec()
+
+
+def main() -> int:
+    configure_logging()
+    application = QApplication(sys.argv)
+    application.setApplicationName("GDPR Hunter")
+    try:
+        with ArchiveLock(default_app_paths().data_dir):
+            return _run_application(application)
+    except ArchiveBusy:
+        _LOG.error("Another GDPR Hunter instance or archive maintenance holds the archive lock")
+        QMessageBox.critical(
+            None,
+            "GDPR Hunter",
+            "Another GDPR Hunter instance or archive maintenance process is using the archive. "
+            "Close it before starting the application.",
+        )
+        return 1
+    except OSError:
+        _LOG.critical("Could not secure exclusive archive access", exc_info=True)
+        QMessageBox.critical(None, "GDPR Hunter", "Cannot secure archive access. Check directory permissions.")
+        return 1
 
 
 if __name__ == "__main__":
