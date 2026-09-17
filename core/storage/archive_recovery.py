@@ -1,11 +1,13 @@
 """Offline, whole-envelope encrypted backup and empty-destination restore.
 
-The bounded in-memory format fails on large archives rather than writing a
+The bounded in-memory format refuses large archives instead of writing a
 plaintext database or master key to a temporary recovery file.
 """
 
 from __future__ import annotations
 
+import ctypes
+import errno
 import hashlib
 import hmac
 import io
@@ -14,6 +16,8 @@ import os
 import re
 import shutil
 import sqlite3
+import stat
+import sys
 import tempfile
 import zipfile
 from pathlib import Path
@@ -97,6 +101,16 @@ def _snapshot_database(paths: AppPaths) -> bytes:
         source.close()
     if len(payload) > MAX_BYTES:
         raise ArchiveError("Database snapshot exceeds recovery size limit")
+    if len(payload) < 100 or not payload.startswith(b"SQLite format 3\x00"):
+        raise ArchiveError("Invalid SQLite snapshot")
+    # backup() copies committed WAL pages into the self-contained in-memory DB,
+    # but serialize() retains the source's WAL header (bytes 18/19). A standalone
+    # image has no -wal/-shm files: change only its documented read/write version
+    # bytes to rollback-journal format before integrity checking or restoring.
+    if payload[18:20] == b"\x02\x02":
+        payload = payload[:18] + b"\x01\x01" + payload[20:]
+    elif payload[18:20] != b"\x01\x01":
+        raise ArchiveError("Unsupported SQLite snapshot journal format")
     return payload
 
 
@@ -186,18 +200,24 @@ def _read_plaintext(payload: bytes) -> tuple[bytes, dict[str, bytes], bytes]:
                 raise ArchiveError("Unexpected or duplicated archive members")
             if not {MANIFEST_MEMBER, KEY_MEMBER, DB_MEMBER} <= set(names):
                 raise ArchiveError("Archive has missing required members")
-            if any(
-                item.is_dir()
-                or (item.external_attr >> 16) & 0o170000 == 0o120000
-                or item.compress_type != zipfile.ZIP_STORED
-                or item.file_size > MAX_BYTES
-                or (
-                    item.filename not in {MANIFEST_MEMBER, KEY_MEMBER, DB_MEMBER}
-                    and not _safe_artifact_name(item.filename)
-                )
-                for item in entries
-            ):
-                raise ArchiveError("Unexpected or unsafe archive member")
+            total = 0
+            for item in entries:
+                total += item.file_size
+                member_type = (item.external_attr >> 16) & 0o170000
+                if (
+                    total > MAX_BYTES
+                    or item.is_dir()
+                    or member_type not in (0, stat.S_IFREG)
+                    or item.flag_bits & 1
+                    or item.compress_type != zipfile.ZIP_STORED
+                    or item.file_size != item.compress_size
+                    or item.file_size > MAX_BYTES
+                    or (
+                        item.filename not in {MANIFEST_MEMBER, KEY_MEMBER, DB_MEMBER}
+                        and not _safe_artifact_name(item.filename)
+                    )
+                ):
+                    raise ArchiveError("Unexpected, oversized or unsafe archive member")
             manifest = json.loads(archive.read(MANIFEST_MEMBER))
             key = archive.read(KEY_MEMBER)
             database = archive.read(DB_MEMBER)
@@ -277,6 +297,27 @@ def create_backup(
             Path(temporary).unlink(missing_ok=True)
 
 
+def _install_directory_no_replace(staging: Path, destination: Path) -> None:
+    """Linux renameat2(RENAME_NOREPLACE), never replace a raced destination."""
+    if not sys.platform.startswith("linux"):
+        raise ArchiveError("Safe directory installation is not supported on this platform")
+    libc = ctypes.CDLL(None, use_errno=True)
+    try:
+        renameat2 = libc.renameat2
+    except AttributeError as exc:
+        raise ArchiveError("Safe no-replace directory installation is unavailable") from exc
+    renameat2.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+    renameat2.restype = ctypes.c_int
+    # AT_FDCWD=-100; RENAME_NOREPLACE=1. Never fall back to rename() here.
+    result = renameat2(-100, os.fsencode(staging), -100, os.fsencode(destination), 1)
+    if result == 0:
+        return
+    error = ctypes.get_errno()
+    if error in (errno.EEXIST, errno.ENOTEMPTY):
+        raise ArchiveError("Restore destination appeared during installation; no data was overwritten")
+    raise OSError(error, "Safe restore installation failed")
+
+
 def restore_backup(
     paths: AppPaths, source: Path, passphrase: str, *, secrets: SecretStore | None = None
 ) -> None:
@@ -288,6 +329,8 @@ def restore_backup(
         if paths.data_dir.exists() or paths.data_dir.is_symlink():
             raise ArchiveError("Restore refuses to overwrite an existing data directory")
         package = source.read_bytes()
+        if len(package) > MAX_BYTES + 1024:
+            raise ArchiveError("Recovery package exceeds the supported size limit")
         header_size = len(MAGIC) + SALT_BYTES + NONCE_BYTES
         if not package.startswith(MAGIC) or len(package) < header_size + 16:
             raise ArchiveError("Recovery package header or authentication tag is invalid")
@@ -306,14 +349,15 @@ def restore_backup(
         try:
             _write_restricted(staging / paths.database_path.name, database)
             for name, payload in sorted(artifacts.items()):
-                destination = staging / name
-                destination.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-                _write_restricted(destination, payload)
+                target_file = staging / name
+                target_file.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+                _write_restricted(target_file, payload)
             if paths.data_dir.exists() or paths.data_dir.is_symlink():
                 raise ArchiveError("Restore destination appeared during validation")
             store.store_master_key_if_absent(key)
-            # If moving fails, the matching key remains: a retry is safe.
-            staging.rename(paths.data_dir)
+            # The matching key may remain on an interrupted rename: retrying the
+            # same archive is safe, while a raced directory can never be replaced.
+            _install_directory_no_replace(staging, paths.data_dir)
         finally:
             if staging.exists():
                 shutil.rmtree(staging)
